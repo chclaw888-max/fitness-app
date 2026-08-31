@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>離線中 · 健身記錄</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&family=Inter:wght@400;500&display=swap');
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; height: 100%;
+      background: #14151B; color: #F3F2EE;
+      font-family: 'Inter', sans-serif;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .card { text-align: center; padding: 32px; max-width: 320px; }
+    .icon {
+      width: 64px; height: 64px; margin: 0 auto 20px;
+      border-radius: 50%; background: #23264A;
+      display: flex; align-items: center; justify-content: center;
+    }
+    h1 { font-family: 'Space Grotesk', sans-serif; font-size: 20px; margin: 0 0 8px; }
+    p { font-size: 14px; color: #92939F; line-height: 1.6; margin: 0 0 24px; }
+    button {
+      background: #4F5EFF; color: #fff; border: none;
+      padding: 12px 24px; border-radius: 14px;
+      font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 14px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#4F5EFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="1" y1="1" x2="23" y2="23"></line>
+        <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"></path>
+        <path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"></path>
+        <path d="M10.71 5.05A16 16 0 0 1 22.58 9"></path>
+        <path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"></path>
+        <path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path>
+        <line x1="12" y1="20" x2="12.01" y2="20"></line>
+      </svg>
+    </div>
+    <h1>目前沒有網路連線</h1>
+    <p>已記錄的訓練資料仍保留在裝置上，恢復連線後會自動同步。</p>
+    <button onclick="location.reload()">重新連線</button>
+  </div>
+</body>
+</html>
