@@ -37,6 +37,18 @@ export function onAuthStateChange(callback) {
   return () => data.subscription.unsubscribe();
 }
 
+export async function getProfile() {
+  const { data, error } = await supabase.auth.getUser();
+  if (error) throw error;
+  const { data: profile, error: profErr } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("id", data.user.id)
+    .single();
+  if (profErr) throw profErr;
+  return profile;
+}
+
 /* =============================================================
  * 課表(routines)
  * ============================================================= */
@@ -254,6 +266,16 @@ export async function getStreak() {
   return streak;
 }
 
+// 對應「我的」頁的總訓練次數 / 累積訓練量
+export async function getAllTimeStats() {
+  const { data, error } = await supabase.from("workouts").select("total_volume").not("finished_at", "is", null);
+  if (error) throw error;
+  return {
+    totalWorkouts: data.length,
+    totalVolume: data.reduce((sum, w) => sum + Number(w.total_volume), 0),
+  };
+}
+
 /* =============================================================
  * 進度頁(progress)
  * ============================================================= */
@@ -278,4 +300,11 @@ export async function getPersonalRecords(limit = 10) {
     .limit(limit);
   if (error) throw error;
   return data;
+}
+
+// 以 exercise_id 為 key 的個人紀錄對照表，開始訓練時用來預填「上次重量」與判斷 PR
+export async function getPersonalRecordsMap() {
+  const { data, error } = await supabase.from("v_personal_records").select("exercise_id, weight, reps");
+  if (error) throw error;
+  return Object.fromEntries(data.map((r) => [r.exercise_id, { weight: Number(r.weight), reps: r.reps }]));
 }

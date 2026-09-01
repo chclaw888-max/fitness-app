@@ -1,79 +1,41 @@
-import { useState, useEffect, useRef } from "react";
-import { Flame, Dumbbell, TrendingUp, User, Home, Play, Check, Clock, Trophy, ChevronRight, ArrowLeft, Bell, Ruler, Download, Info } from "lucide-react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import {
+  Flame, Dumbbell, TrendingUp, User, Home, Play, Check, Clock, Trophy,
+  ChevronRight, ArrowLeft, LogOut, AlertCircle, Loader2,
+} from "lucide-react";
+import { COLORS, display, body } from "./theme";
+import AuthScreen from "./components/AuthScreen";
+import {
+  getSession, onAuthStateChange, signOut, getProfile,
+  listRoutines, seedDefaultRoutines,
+  startWorkout as startWorkoutApi, upsertSet as upsertSetApi, finishWorkout as finishWorkoutApi,
+  listRecentWorkouts, getThisWeekStats, getStreak,
+  getVolumeTrend, getPersonalRecords, getPersonalRecordsMap, getAllTimeStats,
+} from "./lib/api";
 
-const COLORS = {
-  bg: "#14151B",
-  surface: "#1D1F27",
-  surfaceElevated: "#262936",
-  border: "#333645",
-  borderSoft: "#2A2C36",
-  text: "#F3F2EE",
-  textDim: "#92939F",
-  textFaint: "#5A5C68",
-  accent: "#4F5EFF",
-  accentSoft: "#23264A",
-  lime: "#B8FF3D",
-  limeSoft: "#2A3417",
-  danger: "#FF5D5D",
-};
+/* ----------------------------- 共用小元件 ----------------------------- */
 
-const display = { fontFamily: "'Space Grotesk', sans-serif" };
-const body = { fontFamily: "'Inter', sans-serif" };
+function LoadingScreen() {
+  return (
+    <div className="w-full flex items-center justify-center" style={{ background: COLORS.bg, minHeight: "100dvh" }}>
+      <Loader2 size={28} color={COLORS.accent} className="animate-spin" />
+    </div>
+  );
+}
 
-const ROUTINES = [
-  {
-    id: 1,
-    name: "推力訓練日",
-    tag: "胸 / 肩 / 三頭肌",
-    estTime: "45 分鐘",
-    exercises: [
-      { name: "槓鈴臥推", prevWeight: 60, prevReps: 8 },
-      { name: "肩推", prevWeight: 35, prevReps: 8 },
-      { name: "上斜啞鈴推舉", prevWeight: 22, prevReps: 10 },
-      { name: "三頭下拉", prevWeight: 25, prevReps: 12 },
-    ],
-  },
-  {
-    id: 2,
-    name: "拉力訓練日",
-    tag: "背 / 二頭肌",
-    estTime: "50 分鐘",
-    exercises: [
-      { name: "硬舉", prevWeight: 100, prevReps: 5 },
-      { name: "槓鈴划船", prevWeight: 55, prevReps: 8 },
-      { name: "滑輪下拉", prevWeight: 45, prevReps: 10 },
-      { name: "二頭彎舉", prevWeight: 14, prevReps: 12 },
-    ],
-  },
-  {
-    id: 3,
-    name: "腿部訓練日",
-    tag: "股四頭肌 / 後側鏈",
-    estTime: "55 分鐘",
-    exercises: [
-      { name: "深蹲", prevWeight: 80, prevReps: 6 },
-      { name: "腿推", prevWeight: 120, prevReps: 10 },
-      { name: "羅馬尼亞硬舉", prevWeight: 60, prevReps: 8 },
-      { name: "提踵", prevWeight: 40, prevReps: 15 },
-    ],
-  },
-];
-
-const VOLUME_TREND = [
-  { label: "W1", volume: 9800 },
-  { label: "W2", volume: 10500 },
-  { label: "W3", volume: 9200 },
-  { label: "W4", volume: 11800 },
-  { label: "W5", volume: 12100 },
-  { label: "W6", volume: 11400 },
-  { label: "W7", volume: 12450 },
-];
-
-const PR_LIST = [
-  { exercise: "深蹲", weight: "85 kg", date: "8月27日" },
-  { exercise: "硬舉", weight: "105 kg", date: "8月20日" },
-  { exercise: "臥推", weight: "65 kg", date: "8月15日" },
-];
+function ErrorBanner({ message, onDismiss }) {
+  if (!message) return null;
+  return (
+    <div
+      className="mx-5 mt-3 rounded-xl px-4 py-3 flex items-start gap-2"
+      style={{ background: COLORS.dangerSoft, border: `1px solid ${COLORS.danger}` }}
+    >
+      <AlertCircle size={16} color={COLORS.danger} className="shrink-0 mt-0.5" />
+      <div className="flex-1 text-sm" style={{ ...body, color: COLORS.text }}>{message}</div>
+      <button onClick={onDismiss} className="text-xs shrink-0" style={{ ...body, color: COLORS.textDim }}>關閉</button>
+    </div>
+  );
+}
 
 function BottomNav({ tab, setTab }) {
   const items = [
@@ -124,12 +86,24 @@ function StatCard({ label, value, sub, icon: Icon, accentColor }) {
   );
 }
 
-function HomeScreen({ recent, streak, weekVolume, weekWorkouts, goToTrain }) {
+function fmtDate(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return `${d.getMonth() + 1}月${d.getDate()}日`;
+}
+
+/* ----------------------------- 首頁 ----------------------------- */
+
+function HomeScreen({ profile, recent, streak, weekVolume, weekWorkouts, goToTrain }) {
   return (
     <div className="px-5 pb-6">
       <div className="pt-2 pb-5">
-        <div className="text-sm" style={{ ...body, color: COLORS.textDim }}>8 月 31 日 · 星期一</div>
-        <div className="text-2xl mt-1" style={{ ...display, color: COLORS.text, fontWeight: 700 }}>早安,阿明</div>
+        <div className="text-sm" style={{ ...body, color: COLORS.textDim }}>
+          {new Date().toLocaleDateString("zh-TW", { month: "long", day: "numeric", weekday: "long" })}
+        </div>
+        <div className="text-2xl mt-1" style={{ ...display, color: COLORS.text, fontWeight: 700 }}>
+          早安,{profile?.display_name || "訓練者"}
+        </div>
       </div>
 
       <div
@@ -148,7 +122,7 @@ function HomeScreen({ recent, streak, weekVolume, weekWorkouts, goToTrain }) {
       </div>
 
       <div className="flex gap-3 mb-5">
-        <StatCard label="本週訓練量" value={weekVolume.toLocaleString() + " kg"} icon={TrendingUp} accentColor={COLORS.accent} />
+        <StatCard label="本週訓練量" value={Math.round(weekVolume).toLocaleString() + " kg"} icon={TrendingUp} accentColor={COLORS.accent} />
         <StatCard label="本週次數" value={`${weekWorkouts} / 5`} sub="次訓練" icon={Dumbbell} accentColor={COLORS.lime} />
       </div>
 
@@ -162,29 +136,35 @@ function HomeScreen({ recent, streak, weekVolume, weekWorkouts, goToTrain }) {
       </button>
 
       <div className="text-sm mb-3" style={{ ...body, color: COLORS.textDim, fontWeight: 600 }}>最近訓練</div>
-      <div className="flex flex-col gap-3">
-        {recent.map((w) => (
-          <div key={w.id} className="rounded-2xl p-4 flex items-center justify-between" style={{ background: COLORS.surface, border: `1px solid ${COLORS.borderSoft}` }}>
-            <div>
-              <div style={{ ...body, color: COLORS.text, fontWeight: 600 }}>{w.routineName}</div>
-              <div className="text-xs mt-1 flex items-center gap-2" style={{ ...body, color: COLORS.textFaint }}>
-                <span>{w.date}</span>
-                <span>·</span>
-                <span>{w.duration}</span>
+      {recent.length === 0 ? (
+        <div className="text-sm text-center py-6" style={{ ...body, color: COLORS.textFaint }}>還沒有訓練紀錄,開始第一次訓練吧</div>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {recent.map((w) => (
+            <div key={w.id} className="rounded-2xl p-4 flex items-center justify-between" style={{ background: COLORS.surface, border: `1px solid ${COLORS.borderSoft}` }}>
+              <div>
+                <div style={{ ...body, color: COLORS.text, fontWeight: 600 }}>{w.routine_name}</div>
+                <div className="text-xs mt-1 flex items-center gap-2" style={{ ...body, color: COLORS.textFaint }}>
+                  <span>{fmtDate(w.finished_at)}</span>
+                  <span>·</span>
+                  <span>{Math.round(w.duration_seconds / 60)} 分鐘</span>
+                </div>
+              </div>
+              <div className="text-right">
+                <div style={{ ...display, color: COLORS.text, fontWeight: 700 }}>{Math.round(w.total_volume).toLocaleString()}</div>
+                <div className="text-xs" style={{ ...body, color: COLORS.textFaint }}>kg 總量</div>
               </div>
             </div>
-            <div className="text-right">
-              <div style={{ ...display, color: COLORS.text, fontWeight: 700 }}>{w.volume.toLocaleString()}</div>
-              <div className="text-xs" style={{ ...body, color: COLORS.textFaint }}>kg 總量</div>
-            </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-function TrainScreen({ onStart }) {
+/* ----------------------------- 訓練(課表列表) ----------------------------- */
+
+function TrainScreen({ routines, onStart }) {
   return (
     <div className="px-5 pb-6">
       <div className="pt-2 pb-5">
@@ -192,49 +172,57 @@ function TrainScreen({ onStart }) {
         <div className="text-sm mt-1" style={{ ...body, color: COLORS.textDim }}>挑一份課表,開始記錄今天的訓練</div>
       </div>
       <div className="flex flex-col gap-3">
-        {ROUTINES.map((r) => (
-          <div key={r.id} className="rounded-2xl p-4" style={{ background: COLORS.surface, border: `1px solid ${COLORS.borderSoft}` }}>
-            <div className="flex items-start justify-between mb-3">
-              <div>
-                <div style={{ ...display, color: COLORS.text, fontWeight: 700, fontSize: "17px" }}>{r.name}</div>
-                <div className="text-xs mt-1" style={{ ...body, color: COLORS.textDim }}>{r.tag}</div>
+        {routines.map((r) => {
+          const exercises = [...r.routine_exercises].sort((a, b) => a.position - b.position);
+          return (
+            <div key={r.id} className="rounded-2xl p-4" style={{ background: COLORS.surface, border: `1px solid ${COLORS.borderSoft}` }}>
+              <div className="flex items-start justify-between mb-3">
+                <div>
+                  <div style={{ ...display, color: COLORS.text, fontWeight: 700, fontSize: "17px" }}>{r.name}</div>
+                  <div className="text-xs mt-1" style={{ ...body, color: COLORS.textDim }}>{r.tag}</div>
+                </div>
+                {r.est_minutes && (
+                  <div className="flex items-center gap-1 text-xs" style={{ ...body, color: COLORS.textFaint }}>
+                    <Clock size={13} />
+                    <span>{r.est_minutes} 分鐘</span>
+                  </div>
+                )}
               </div>
-              <div className="flex items-center gap-1 text-xs" style={{ ...body, color: COLORS.textFaint }}>
-                <Clock size={13} />
-                <span>{r.estTime}</span>
+              <div className="text-xs mb-4" style={{ ...body, color: COLORS.textFaint }}>
+                {exercises.map((re) => re.exercise.name).join(" · ")}
               </div>
+              <button
+                onClick={() => onStart(r)}
+                className="w-full rounded-xl py-3 flex items-center justify-center gap-2"
+                style={{ background: COLORS.accentSoft, color: COLORS.accent }}
+              >
+                <Play size={15} fill={COLORS.accent} />
+                <span style={{ ...body, fontWeight: 600, fontSize: "14px" }}>開始訓練</span>
+              </button>
             </div>
-            <div className="text-xs mb-4" style={{ ...body, color: COLORS.textFaint }}>
-              {r.exercises.map((e) => e.name).join(" · ")}
-            </div>
-            <button
-              onClick={() => onStart(r)}
-              className="w-full rounded-xl py-3 flex items-center justify-center gap-2"
-              style={{ background: COLORS.accentSoft, color: COLORS.accent }}
-            >
-              <Play size={15} fill={COLORS.accent} />
-              <span style={{ ...body, fontWeight: 600, fontSize: "14px" }}>開始訓練</span>
-            </button>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
 }
 
-function VolumeChart() {
+/* ----------------------------- 進度 ----------------------------- */
+
+function VolumeChart({ trend }) {
   const w = 280, h = 110, pad = 10;
-  const max = Math.max(...VOLUME_TREND.map((d) => d.volume));
-  const min = Math.min(...VOLUME_TREND.map((d) => d.volume));
+  const values = trend.map((d) => Number(d.volume));
+  const max = Math.max(...values, 1);
+  const min = Math.min(...values, 0);
   const range = max - min || 1;
-  const step = (w - pad * 2) / (VOLUME_TREND.length - 1);
-  const points = VOLUME_TREND.map((d, i) => {
+  const step = trend.length > 1 ? (w - pad * 2) / (trend.length - 1) : 0;
+  const points = trend.map((d, i) => {
     const x = pad + i * step;
-    const y = h - pad - ((d.volume - min) / range) * (h - pad * 2);
-    return { x, y, ...d };
+    const y = h - pad - ((Number(d.volume) - min) / range) * (h - pad * 2);
+    return { x, y };
   });
   const pathD = points.map((p, i) => `${i === 0 ? "M" : "L"}${p.x},${p.y}`).join(" ");
-  const areaD = `${pathD} L${points[points.length - 1].x},${h} L${points[0].x},${h} Z`;
+  const areaD = points.length ? `${pathD} L${points[points.length - 1].x},${h} L${points[0].x},${h} Z` : "";
 
   return (
     <svg viewBox={`0 0 ${w} ${h}`} className="w-full" style={{ overflow: "visible" }}>
@@ -244,7 +232,7 @@ function VolumeChart() {
           <stop offset="100%" stopColor={COLORS.accent} stopOpacity="0" />
         </linearGradient>
       </defs>
-      <path d={areaD} fill="url(#volFill)" />
+      {points.length > 0 && <path d={areaD} fill="url(#volFill)" />}
       <path d={pathD} fill="none" stroke={COLORS.accent} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
       {points.map((p, i) => (
         <circle key={i} cx={p.x} cy={p.y} r={i === points.length - 1 ? 4 : 2.5} fill={i === points.length - 1 ? COLORS.lime : COLORS.accent} />
@@ -253,60 +241,63 @@ function VolumeChart() {
   );
 }
 
-function ProgressScreen() {
+function ProgressScreen({ volumeTrend, personalRecords, weekVolume }) {
   return (
     <div className="px-5 pb-6">
       <div className="pt-2 pb-5">
         <div className="text-2xl" style={{ ...display, color: COLORS.text, fontWeight: 700 }}>你的進度</div>
-        <div className="text-sm mt-1" style={{ ...body, color: COLORS.textDim }}>過去 7 週的訓練趨勢</div>
+        <div className="text-sm mt-1" style={{ ...body, color: COLORS.textDim }}>過去幾週的訓練趨勢</div>
       </div>
 
       <div className="rounded-2xl p-4 mb-3" style={{ background: COLORS.surface, border: `1px solid ${COLORS.borderSoft}` }}>
-        <div className="flex items-end justify-between mb-2">
-          <div>
-            <div className="text-xs" style={{ ...body, color: COLORS.textDim }}>本週訓練量</div>
-            <div className="text-2xl" style={{ ...display, color: COLORS.text, fontWeight: 700 }}>12,450 kg</div>
-          </div>
-          <div className="text-xs px-2 py-1 rounded-full" style={{ background: COLORS.limeSoft, color: COLORS.lime, ...body, fontWeight: 600 }}>
-            +9% 較上週
-          </div>
+        <div className="mb-2">
+          <div className="text-xs" style={{ ...body, color: COLORS.textDim }}>本週訓練量</div>
+          <div className="text-2xl" style={{ ...display, color: COLORS.text, fontWeight: 700 }}>{Math.round(weekVolume).toLocaleString()} kg</div>
         </div>
-        <VolumeChart />
-        <div className="flex justify-between mt-1">
-          {VOLUME_TREND.map((d) => (
-            <span key={d.label} className="text-xs" style={{ ...body, color: COLORS.textFaint }}>{d.label}</span>
-          ))}
-        </div>
+        {volumeTrend.length > 0 ? (
+          <>
+            <VolumeChart trend={volumeTrend} />
+            <div className="flex justify-between mt-1">
+              {volumeTrend.map((d, i) => (
+                <span key={i} className="text-xs" style={{ ...body, color: COLORS.textFaint }}>
+                  {new Date(d.week_start).getMonth() + 1}/{new Date(d.week_start).getDate()}
+                </span>
+              ))}
+            </div>
+          </>
+        ) : (
+          <div className="text-sm text-center py-4" style={{ ...body, color: COLORS.textFaint }}>累積更多訓練後這裡會顯示趨勢圖</div>
+        )}
       </div>
 
       <div className="text-sm mb-3" style={{ ...body, color: COLORS.textDim, fontWeight: 600 }}>個人紀錄</div>
-      <div className="flex flex-col gap-3">
-        {PR_LIST.map((p, i) => (
-          <div key={i} className="rounded-2xl p-4 flex items-center justify-between" style={{ background: COLORS.surface, border: `1px solid ${COLORS.borderSoft}` }}>
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: COLORS.limeSoft }}>
-                <Trophy size={16} color={COLORS.lime} />
+      {personalRecords.length === 0 ? (
+        <div className="text-sm text-center py-6" style={{ ...body, color: COLORS.textFaint }}>還沒有個人紀錄</div>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {personalRecords.map((p, i) => (
+            <div key={i} className="rounded-2xl p-4 flex items-center justify-between" style={{ background: COLORS.surface, border: `1px solid ${COLORS.borderSoft}` }}>
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: COLORS.limeSoft }}>
+                  <Trophy size={16} color={COLORS.lime} />
+                </div>
+                <div>
+                  <div style={{ ...body, color: COLORS.text, fontWeight: 600 }}>{p.exercise_name}</div>
+                  <div className="text-xs" style={{ ...body, color: COLORS.textFaint }}>{fmtDate(p.completed_at)}</div>
+                </div>
               </div>
-              <div>
-                <div style={{ ...body, color: COLORS.text, fontWeight: 600 }}>{p.exercise}</div>
-                <div className="text-xs" style={{ ...body, color: COLORS.textFaint }}>{p.date}</div>
-              </div>
+              <div style={{ ...display, color: COLORS.text, fontWeight: 700 }}>{p.weight} kg</div>
             </div>
-            <div style={{ ...display, color: COLORS.text, fontWeight: 700 }}>{p.weight}</div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-function MeScreen() {
-  const rows = [
-    { icon: Bell, label: "提醒通知" },
-    { icon: Ruler, label: "單位設定", value: "公斤 (kg)" },
-    { icon: Download, label: "匯出資料" },
-    { icon: Info, label: "關於這個 APP" },
-  ];
+/* ----------------------------- 我的 ----------------------------- */
+
+function MeScreen({ profile, allTimeStats, onSignOut }) {
   return (
     <div className="px-5 pb-6">
       <div className="pt-2 pb-5 flex items-center gap-4">
@@ -314,65 +305,59 @@ function MeScreen() {
           className="w-16 h-16 rounded-full flex items-center justify-center"
           style={{ background: COLORS.accentSoft, color: COLORS.accent, ...display, fontWeight: 700, fontSize: "22px" }}
         >
-          阿
+          {(profile?.display_name || "訓")[0]}
         </div>
         <div>
-          <div className="text-xl" style={{ ...display, color: COLORS.text, fontWeight: 700 }}>阿明</div>
-          <div className="text-xs" style={{ ...body, color: COLORS.textFaint }}>加入於 2025 年 3 月</div>
+          <div className="text-xl" style={{ ...display, color: COLORS.text, fontWeight: 700 }}>{profile?.display_name || "訓練者"}</div>
+          <div className="text-xs" style={{ ...body, color: COLORS.textFaint }}>
+            加入於 {profile?.created_at ? new Date(profile.created_at).toLocaleDateString("zh-TW", { year: "numeric", month: "long" }) : "—"}
+          </div>
         </div>
       </div>
 
       <div className="flex gap-3 mb-6">
-        <StatCard label="總訓練次數" value="86" icon={Dumbbell} />
-        <StatCard label="累積訓練量" value="642t" icon={TrendingUp} accentColor={COLORS.accent} />
+        <StatCard label="總訓練次數" value={allTimeStats.totalWorkouts} icon={Dumbbell} />
+        <StatCard
+          label="累積訓練量"
+          value={allTimeStats.totalVolume >= 1000 ? `${(allTimeStats.totalVolume / 1000).toFixed(1)}t` : `${Math.round(allTimeStats.totalVolume)}kg`}
+          icon={TrendingUp}
+          accentColor={COLORS.accent}
+        />
       </div>
 
-      <div className="rounded-2xl overflow-hidden" style={{ background: COLORS.surface, border: `1px solid ${COLORS.borderSoft}` }}>
-        {rows.map((r, i) => {
-          const Icon = r.icon;
-          return (
-            <div
-              key={i}
-              className="flex items-center justify-between px-4 py-3.5"
-              style={{ borderBottom: i < rows.length - 1 ? `1px solid ${COLORS.borderSoft}` : "none" }}
-            >
-              <div className="flex items-center gap-3">
-                <Icon size={17} color={COLORS.textDim} />
-                <span style={{ ...body, color: COLORS.text }}>{r.label}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                {r.value && <span className="text-sm" style={{ ...body, color: COLORS.textFaint }}>{r.value}</span>}
-                <ChevronRight size={16} color={COLORS.textFaint} />
-              </div>
-            </div>
-          );
-        })}
-      </div>
+      <button
+        onClick={onSignOut}
+        className="w-full rounded-2xl overflow-hidden flex items-center justify-between px-4 py-3.5"
+        style={{ background: COLORS.surface, border: `1px solid ${COLORS.borderSoft}` }}
+      >
+        <div className="flex items-center gap-3">
+          <LogOut size={17} color={COLORS.danger} />
+          <span style={{ ...body, color: COLORS.danger }}>登出</span>
+        </div>
+        <ChevronRight size={16} color={COLORS.textFaint} />
+      </button>
     </div>
   );
 }
 
-function ActiveWorkout({ workout, onUpdateSet, onToggleSet, onFinish, onCancel, elapsedSec, restSeconds, onSkipRest, onAddRest }) {
+/* ----------------------------- 訓練進行中 ----------------------------- */
+
+function ActiveWorkout({ workout, onUpdateSet, onToggleSet, onFinish, onCancel, elapsedSec, restSeconds, onSkipRest, onAddRest, finishing }) {
   const fmtTime = (s) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
   const totalSets = workout.exercises.reduce((a, e) => a + e.sets.length, 0);
   const doneSets = workout.exercises.reduce((a, e) => a + e.sets.filter((s) => s.done).length, 0);
 
-  // 訓練進行中保持螢幕喚醒,避免組間休息時螢幕自動關閉
   useEffect(() => {
     let wakeLock = null;
     const requestWakeLock = async () => {
       try {
-        if ("wakeLock" in navigator) {
-          wakeLock = await navigator.wakeLock.request("screen");
-        }
+        if ("wakeLock" in navigator) wakeLock = await navigator.wakeLock.request("screen");
       } catch (err) {
-        // 部分瀏覽器 / 情境(如背景分頁)會拒絕請求,靜默失敗即可
+        // 部分瀏覽器/情境會拒絕請求，靜默失敗即可
       }
     };
     requestWakeLock();
-    return () => {
-      if (wakeLock) wakeLock.release().catch(() => {});
-    };
+    return () => { if (wakeLock) wakeLock.release().catch(() => {}); };
   }, []);
 
   return (
@@ -410,7 +395,9 @@ function ActiveWorkout({ workout, onUpdateSet, onToggleSet, onFinish, onCancel, 
                 return (
                   <div key={setIdx} className="grid grid-cols-12 gap-2 items-center mb-2">
                     <div className="col-span-2 text-sm" style={{ ...display, color: COLORS.textDim }}>{setIdx + 1}</div>
-                    <div className="col-span-3 text-xs" style={{ ...body, color: COLORS.textFaint }}>{ex.prevWeight}kg×{ex.prevReps}</div>
+                    <div className="col-span-3 text-xs" style={{ ...body, color: COLORS.textFaint }}>
+                      {ex.prevWeight > 0 ? `${ex.prevWeight}kg×${ex.prevReps}` : "—"}
+                    </div>
                     <div className="col-span-3">
                       <input
                         type="number"
@@ -447,11 +434,12 @@ function ActiveWorkout({ workout, onUpdateSet, onToggleSet, onFinish, onCancel, 
 
         <button
           onClick={onFinish}
-          className="w-full rounded-2xl py-4 mt-2 mb-4"
+          disabled={doneSets === 0 || finishing}
+          className="w-full rounded-2xl py-4 mt-2 mb-4 flex items-center justify-center gap-2"
           style={{ background: doneSets > 0 ? COLORS.accent : COLORS.surfaceElevated, color: doneSets > 0 ? "#fff" : COLORS.textFaint }}
-          disabled={doneSets === 0}
         >
-          <span style={{ ...display, fontWeight: 700, fontSize: "16px" }}>完成訓練</span>
+          {finishing && <Loader2 size={16} className="animate-spin" />}
+          <span style={{ ...display, fontWeight: 700, fontSize: "16px" }}>{finishing ? "儲存中…" : "完成訓練"}</span>
         </button>
       </div>
 
@@ -510,51 +498,126 @@ function SummaryModal({ summary, onDone }) {
   );
 }
 
+/* ----------------------------- App 主體 ----------------------------- */
+
 export default function App() {
+  const [sessionLoading, setSessionLoading] = useState(true);
+  const [session, setSession] = useState(null);
+
+  const [dataLoading, setDataLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState(null);
+
+  const [profile, setProfile] = useState(null);
+  const [routines, setRoutines] = useState([]);
+  const [recent, setRecent] = useState([]);
+  const [streak, setStreak] = useState(0);
+  const [weekVolume, setWeekVolume] = useState(0);
+  const [weekWorkouts, setWeekWorkouts] = useState(0);
+  const [volumeTrend, setVolumeTrend] = useState([]);
+  const [personalRecords, setPersonalRecords] = useState([]);
+  const [allTimeStats, setAllTimeStats] = useState({ totalWorkouts: 0, totalVolume: 0 });
+
   const [tab, setTab] = useState("home");
   const [activeWorkout, setActiveWorkout] = useState(null);
   const [elapsedSec, setElapsedSec] = useState(0);
   const [restSeconds, setRestSeconds] = useState(null);
   const [summary, setSummary] = useState(null);
-  const [streak, setStreak] = useState(12);
-  const [weekVolume, setWeekVolume] = useState(12450);
-  const [weekWorkouts, setWeekWorkouts] = useState(3);
-  const [recent, setRecent] = useState([
-    { id: 101, routineName: "拉力訓練日", date: "8月29日", duration: "52 分鐘", volume: 8420 },
-    { id: 102, routineName: "腿部訓練日", date: "8月27日", duration: "58 分鐘", volume: 11200 },
-    { id: 103, routineName: "推力訓練日", date: "8月25日", duration: "46 分鐘", volume: 7650 },
-  ]);
+  const [finishing, setFinishing] = useState(false);
 
   const startTimeRef = useRef(null);
 
+  // 監聽登入狀態
+  useEffect(() => {
+    getSession().then((s) => {
+      setSession(s);
+      setSessionLoading(false);
+    });
+    const unsubscribe = onAuthStateChange((s) => setSession(s));
+    return unsubscribe;
+  }, []);
+
+  const loadAllData = useCallback(async () => {
+    setDataLoading(true);
+    setErrorMsg(null);
+    try {
+      let r = await listRoutines();
+      if (r.length === 0) {
+        await seedDefaultRoutines();
+        r = await listRoutines();
+      }
+      const [recentW, weekStats, streakVal, trend, prs, prof, allTime] = await Promise.all([
+        listRecentWorkouts(5),
+        getThisWeekStats(),
+        getStreak(),
+        getVolumeTrend(7),
+        getPersonalRecords(10),
+        getProfile(),
+        getAllTimeStats(),
+      ]);
+      setRoutines(r);
+      setRecent(recentW);
+      setWeekVolume(weekStats.weekVolume);
+      setWeekWorkouts(weekStats.weekWorkouts);
+      setStreak(streakVal);
+      setVolumeTrend(trend);
+      setPersonalRecords(prs);
+      setProfile(prof);
+      setAllTimeStats(allTime);
+    } catch (e) {
+      setErrorMsg(e.message || "資料載入失敗,請檢查網路連線");
+    } finally {
+      setDataLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (session) loadAllData();
+  }, [session, loadAllData]);
+
+  // 訓練中計時
   useEffect(() => {
     if (!activeWorkout) return;
     startTimeRef.current = Date.now();
-    const t = setInterval(() => {
-      setElapsedSec(Math.floor((Date.now() - startTimeRef.current) / 1000));
-    }, 1000);
+    const t = setInterval(() => setElapsedSec(Math.floor((Date.now() - startTimeRef.current) / 1000)), 1000);
     return () => clearInterval(t);
   }, [activeWorkout]);
 
+  // 組間休息倒數
   useEffect(() => {
     if (restSeconds === null) return;
-    if (restSeconds <= 0) {
-      setRestSeconds(null);
-      return;
-    }
+    if (restSeconds <= 0) { setRestSeconds(null); return; }
     const t = setTimeout(() => setRestSeconds((s) => s - 1), 1000);
     return () => clearTimeout(t);
   }, [restSeconds]);
 
-  const startWorkout = (routine) => {
-    setElapsedSec(0);
-    setActiveWorkout({
-      routine,
-      exercises: routine.exercises.map((e) => ({
-        ...e,
-        sets: [0, 1, 2].map(() => ({ weight: e.prevWeight, reps: e.prevReps, done: false })),
-      })),
-    });
+  const handleStartWorkout = async (routine) => {
+    setErrorMsg(null);
+    try {
+      const w = await startWorkoutApi({ routineId: routine.id, routineName: routine.name });
+      const prMap = await getPersonalRecordsMap();
+      const exercises = [...routine.routine_exercises]
+        .sort((a, b) => a.position - b.position)
+        .map((re) => {
+          const pr = prMap[re.exercise.id];
+          const prevWeight = pr ? pr.weight : 0;
+          const prevReps = pr ? pr.reps : re.target_reps;
+          return {
+            id: re.exercise.id,
+            name: re.exercise.name,
+            prevWeight,
+            prevReps,
+            sets: Array.from({ length: re.target_sets }, () => ({
+              weight: prevWeight || re.target_reps ? prevWeight : "",
+              reps: prevReps,
+              done: false,
+            })),
+          };
+        });
+      setElapsedSec(0);
+      setActiveWorkout({ workoutId: w.id, routine, exercises });
+    } catch (e) {
+      setErrorMsg(e.message || "無法開始訓練,請再試一次");
+    }
   };
 
   const updateSet = (exIdx, setIdx, field, value) => {
@@ -569,23 +632,34 @@ export default function App() {
   };
 
   const toggleSet = (exIdx, setIdx) => {
-    let willBeDone = false;
+    const ex = activeWorkout.exercises[exIdx];
+    const s = ex.sets[setIdx];
+    const newDone = !s.done;
+
     setActiveWorkout((w) => {
-      const exercises = w.exercises.map((ex, i) => {
-        if (i !== exIdx) return ex;
-        const sets = ex.sets.map((s, j) => {
-          if (j !== setIdx) return s;
-          willBeDone = !s.done;
-          return { ...s, done: !s.done };
-        });
-        return { ...ex, sets };
+      const exercises = w.exercises.map((e, i) => {
+        if (i !== exIdx) return e;
+        const sets = e.sets.map((set, j) => (j === setIdx ? { ...set, done: newDone } : set));
+        return { ...e, sets };
       });
       return { ...w, exercises };
     });
-    if (willBeDone) setRestSeconds(90);
+
+    upsertSetApi({
+      workoutId: activeWorkout.workoutId,
+      exerciseId: ex.id,
+      exerciseName: ex.name,
+      setNumber: setIdx + 1,
+      weight: Number(s.weight) || 0,
+      reps: Number(s.reps) || 0,
+      done: newDone,
+      isPr: Number(s.weight) > ex.prevWeight,
+    }).catch((e) => setErrorMsg(e.message || "同步這組紀錄時發生問題,但不影響繼續訓練"));
+
+    if (newDone) setRestSeconds(90);
   };
 
-  const finishWorkout = () => {
+  const finishWorkout = async () => {
     let volume = 0, sets = 0, prCount = 0;
     activeWorkout.exercises.forEach((ex) => {
       ex.sets.forEach((s) => {
@@ -597,31 +671,46 @@ export default function App() {
       });
     });
     const mins = Math.max(1, Math.round(elapsedSec / 60));
-    setSummary({ duration: `${mins} 分鐘`, volume, sets, prCount });
-    setRecent((r) => [
-      { id: Date.now(), routineName: activeWorkout.routine.name, date: "剛剛", duration: `${mins} 分鐘`, volume },
-      ...r,
-    ]);
-    setWeekVolume((v) => v + volume);
-    setWeekWorkouts((n) => Math.min(5, n + 1));
-    setStreak((s) => s + 1);
-    setRestSeconds(null);
+    setFinishing(true);
+    setErrorMsg(null);
+    try {
+      await finishWorkoutApi({ workoutId: activeWorkout.workoutId, durationSeconds: elapsedSec });
+      setSummary({ duration: `${mins} 分鐘`, volume, sets, prCount });
+      setRestSeconds(null);
+    } catch (e) {
+      setErrorMsg(e.message || "訓練儲存失敗,請檢查網路連線後再試一次");
+    } finally {
+      setFinishing(false);
+    }
   };
 
   const closeSummary = () => {
     setSummary(null);
     setActiveWorkout(null);
     setTab("home");
+    loadAllData();
   };
+
+  const handleSignOut = async () => {
+    try {
+      await signOut();
+    } catch (e) {
+      setErrorMsg(e.message);
+    }
+  };
+
+  if (sessionLoading) return <LoadingScreen />;
+  if (!session) return <AuthScreen />;
 
   return (
     <div className="w-full flex justify-center" style={{ background: "#0A0A0D", minHeight: "100dvh" }}>
-      <div
-        className="w-full flex flex-col relative"
-        style={{ maxWidth: "480px", minHeight: "100dvh", background: COLORS.bg }}
-      >
+      <div className="w-full flex flex-col relative" style={{ maxWidth: "480px", minHeight: "100dvh", background: COLORS.bg }}>
         <div className="flex-1 overflow-hidden relative" style={{ paddingTop: activeWorkout ? 0 : "env(safe-area-inset-top)" }}>
-          {activeWorkout ? (
+          {dataLoading ? (
+            <div className="flex items-center justify-center h-full">
+              <Loader2 size={24} color={COLORS.accent} className="animate-spin" />
+            </div>
+          ) : activeWorkout ? (
             <ActiveWorkout
               workout={activeWorkout}
               onUpdateSet={updateSet}
@@ -632,22 +721,24 @@ export default function App() {
               restSeconds={restSeconds}
               onSkipRest={() => setRestSeconds(null)}
               onAddRest={() => setRestSeconds((s) => (s || 0) + 15)}
+              finishing={finishing}
             />
           ) : (
             <div className="h-full overflow-y-auto">
+              <ErrorBanner message={errorMsg} onDismiss={() => setErrorMsg(null)} />
               {tab === "home" && (
-                <HomeScreen recent={recent} streak={streak} weekVolume={weekVolume} weekWorkouts={weekWorkouts} goToTrain={() => setTab("train")} />
+                <HomeScreen profile={profile} recent={recent} streak={streak} weekVolume={weekVolume} weekWorkouts={weekWorkouts} goToTrain={() => setTab("train")} />
               )}
-              {tab === "train" && <TrainScreen onStart={startWorkout} />}
-              {tab === "progress" && <ProgressScreen />}
-              {tab === "me" && <MeScreen />}
+              {tab === "train" && <TrainScreen routines={routines} onStart={handleStartWorkout} />}
+              {tab === "progress" && <ProgressScreen volumeTrend={volumeTrend} personalRecords={personalRecords} weekVolume={weekVolume} />}
+              {tab === "me" && <MeScreen profile={profile} allTimeStats={allTimeStats} onSignOut={handleSignOut} />}
             </div>
           )}
 
           {summary && <SummaryModal summary={summary} onDone={closeSummary} />}
         </div>
 
-        {!activeWorkout && <BottomNav tab={tab} setTab={setTab} />}
+        {!activeWorkout && !dataLoading && <BottomNav tab={tab} setTab={setTab} />}
       </div>
     </div>
   );
