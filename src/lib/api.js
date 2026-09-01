@@ -1,5 +1,12 @@
 import { supabase } from "./supabase";
 
+async function getUserId() {
+  const { data, error } = await supabase.auth.getUser();
+  if (error) throw error;
+  if (!data.user) throw new Error("尚未登入");
+  return data.user.id;
+}
+
 /* =============================================================
  * Auth
  * ============================================================= */
@@ -71,9 +78,10 @@ export async function listRoutines() {
 }
 
 export async function createRoutine({ name, tag, estMinutes, exerciseIds }) {
+  const userId = await getUserId();
   const { data: routine, error: routineErr } = await supabase
     .from("routines")
-    .insert({ name, tag, est_minutes: estMinutes })
+    .insert({ user_id: userId, name, tag, est_minutes: estMinutes })
     .select()
     .single();
   if (routineErr) throw routineErr;
@@ -132,7 +140,12 @@ export async function listExercises() {
 }
 
 export async function createCustomExercise({ name, category }) {
-  const { data, error } = await supabase.from("exercises").insert({ name, category }).select().single();
+  const userId = await getUserId();
+  const { data, error } = await supabase
+    .from("exercises")
+    .insert({ name, category, created_by: userId })
+    .select()
+    .single();
   if (error) throw error;
   return data;
 }
@@ -144,9 +157,10 @@ export async function createCustomExercise({ name, category }) {
 
 // 開始一場訓練：建立 workouts row，回傳 workoutId 供後續記錄組數使用
 export async function startWorkout({ routineId, routineName }) {
+  const userId = await getUserId();
   const { data, error } = await supabase
     .from("workouts")
-    .insert({ routine_id: routineId, routine_name: routineName })
+    .insert({ user_id: userId, routine_id: routineId, routine_name: routineName })
     .select()
     .single();
   if (error) throw error;

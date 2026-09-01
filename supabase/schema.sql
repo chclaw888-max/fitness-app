@@ -45,7 +45,7 @@ create table public.exercises (
   category text not null default '其他' check (
     category in ('胸', '背', '腿', '肩', '手臂', '核心', '有氧', '其他')
   ),
-  created_by uuid references auth.users(id) on delete cascade,
+  created_by uuid default auth.uid() references auth.users(id) on delete cascade,
   created_at timestamptz not null default now()
 );
 
@@ -60,7 +60,7 @@ create unique index exercises_user_name_unique
 -- =============================================================
 create table public.routines (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade,
+  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
   name text not null,
   tag text,
   est_minutes int,
@@ -105,7 +105,7 @@ create index routine_exercises_routine_id_idx on public.routine_exercises (routi
 -- =============================================================
 create table public.workouts (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade,
+  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
   routine_id uuid references public.routines(id) on delete set null,
   routine_name text not null,
   started_at timestamptz not null default now(),
@@ -143,7 +143,7 @@ create index workout_sets_exercise_completed_idx on public.workout_sets (exercis
 -- =============================================================
 create table public.body_metrics (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade,
+  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
   recorded_at date not null default current_date,
   weight_kg numeric,
   body_fat_pct numeric,
