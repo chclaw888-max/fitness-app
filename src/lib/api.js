@@ -77,7 +77,8 @@ export async function listRoutines() {
   return data;
 }
 
-export async function createRoutine({ name, tag, estMinutes, exerciseIds }) {
+// exercises: [{ exerciseId, targetSets, targetReps }]，順序即為 position
+export async function createRoutine({ name, tag, estMinutes, exercises }) {
   const userId = await getUserId();
   const { data: routine, error: routineErr } = await supabase
     .from("routines")
@@ -86,15 +87,39 @@ export async function createRoutine({ name, tag, estMinutes, exerciseIds }) {
     .single();
   if (routineErr) throw routineErr;
 
-  const rows = exerciseIds.map((exerciseId, i) => ({
+  const rows = exercises.map((e, i) => ({
     routine_id: routine.id,
-    exercise_id: exerciseId,
+    exercise_id: e.exerciseId,
     position: i,
+    target_sets: e.targetSets ?? 3,
+    target_reps: e.targetReps ?? 8,
   }));
   const { error: exErr } = await supabase.from("routine_exercises").insert(rows);
   if (exErr) throw exErr;
 
   return routine;
+}
+
+// 編輯課表：更新基本資料，並整批替換動作清單(先刪除舊的，再插入新的)
+export async function updateRoutine({ routineId, name, tag, estMinutes, exercises }) {
+  const { error: updErr } = await supabase
+    .from("routines")
+    .update({ name, tag, est_minutes: estMinutes })
+    .eq("id", routineId);
+  if (updErr) throw updErr;
+
+  const { error: delErr } = await supabase.from("routine_exercises").delete().eq("routine_id", routineId);
+  if (delErr) throw delErr;
+
+  const rows = exercises.map((e, i) => ({
+    routine_id: routineId,
+    exercise_id: e.exerciseId,
+    position: i,
+    target_sets: e.targetSets ?? 3,
+    target_reps: e.targetReps ?? 8,
+  }));
+  const { error: insErr } = await supabase.from("routine_exercises").insert(rows);
+  if (insErr) throw insErr;
 }
 
 export async function deleteRoutine(routineId) {
@@ -123,7 +148,7 @@ export async function seedDefaultRoutines() {
       name: p.name,
       tag: p.tag,
       estMinutes: p.estMinutes,
-      exerciseIds: p.exerciseNames.map((n) => byName[n]).filter(Boolean),
+      exercises: p.exerciseNames.filter((n) => byName[n]).map((n) => ({ exerciseId: byName[n], targetSets: 3, targetReps: 8 })),
     });
   }
 }

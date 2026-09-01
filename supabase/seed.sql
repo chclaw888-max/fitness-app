@@ -6,16 +6,23 @@
 insert into public.exercises (name, category, created_by) values
   ('槓鈴臥推', '胸', null),
   ('上斜啞鈴推舉', '胸', null),
+  ('啞鈴臥推', '胸', null),
   ('肩推', '肩', null),
+  ('啞鈴側平舉', '肩', null),
   ('三頭下拉', '手臂', null),
+  ('槓鈴彎舉', '手臂', null),
   ('硬舉', '背', null),
   ('槓鈴划船', '背', null),
   ('滑輪下拉', '背', null),
+  ('T bar 划船', '背', null),
   ('二頭彎舉', '手臂', null),
   ('深蹲', '腿', null),
   ('腿推', '腿', null),
   ('羅馬尼亞硬舉', '腿', null),
-  ('提踵', '腿', null)
+  ('腿彎舉', '腿', null),
+  ('提踵', '腿', null),
+  ('捲腹', '核心', null),
+  ('抬腿', '核心', null)
 on conflict do nothing;
 
 -- 提醒：課表(routines)屬於個別使用者，不適合當成系統種子資料。

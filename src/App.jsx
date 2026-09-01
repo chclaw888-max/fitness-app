@@ -5,9 +5,10 @@ import {
 } from "lucide-react";
 import { COLORS, display, body } from "./theme";
 import AuthScreen from "./components/AuthScreen";
+import TrainScreen from "./components/TrainScreen";
 import {
   getSession, onAuthStateChange, signOut, getProfile,
-  listRoutines, seedDefaultRoutines,
+  listRoutines, seedDefaultRoutines, createRoutine, updateRoutine, deleteRoutine, listExercises,
   startWorkout as startWorkoutApi, upsertSet as upsertSetApi, finishWorkout as finishWorkoutApi,
   listRecentWorkouts, getThisWeekStats, getStreak,
   getVolumeTrend, getPersonalRecords, getPersonalRecordsMap, getAllTimeStats,
@@ -158,51 +159,6 @@ function HomeScreen({ profile, recent, streak, weekVolume, weekWorkouts, goToTra
           ))}
         </div>
       )}
-    </div>
-  );
-}
-
-/* ----------------------------- 訓練(課表列表) ----------------------------- */
-
-function TrainScreen({ routines, onStart }) {
-  return (
-    <div className="px-5 pb-6">
-      <div className="pt-2 pb-5">
-        <div className="text-2xl" style={{ ...display, color: COLORS.text, fontWeight: 700 }}>選擇課表</div>
-        <div className="text-sm mt-1" style={{ ...body, color: COLORS.textDim }}>挑一份課表,開始記錄今天的訓練</div>
-      </div>
-      <div className="flex flex-col gap-3">
-        {routines.map((r) => {
-          const exercises = [...r.routine_exercises].sort((a, b) => a.position - b.position);
-          return (
-            <div key={r.id} className="rounded-2xl p-4" style={{ background: COLORS.surface, border: `1px solid ${COLORS.borderSoft}` }}>
-              <div className="flex items-start justify-between mb-3">
-                <div>
-                  <div style={{ ...display, color: COLORS.text, fontWeight: 700, fontSize: "17px" }}>{r.name}</div>
-                  <div className="text-xs mt-1" style={{ ...body, color: COLORS.textDim }}>{r.tag}</div>
-                </div>
-                {r.est_minutes && (
-                  <div className="flex items-center gap-1 text-xs" style={{ ...body, color: COLORS.textFaint }}>
-                    <Clock size={13} />
-                    <span>{r.est_minutes} 分鐘</span>
-                  </div>
-                )}
-              </div>
-              <div className="text-xs mb-4" style={{ ...body, color: COLORS.textFaint }}>
-                {exercises.map((re) => re.exercise.name).join(" · ")}
-              </div>
-              <button
-                onClick={() => onStart(r)}
-                className="w-full rounded-xl py-3 flex items-center justify-center gap-2"
-                style={{ background: COLORS.accentSoft, color: COLORS.accent }}
-              >
-                <Play size={15} fill={COLORS.accent} />
-                <span style={{ ...body, fontWeight: 600, fontSize: "14px" }}>開始訓練</span>
-              </button>
-            </div>
-          );
-        })}
-      </div>
     </div>
   );
 }
@@ -399,13 +355,23 @@ function ActiveWorkout({ workout, onUpdateSet, onToggleSet, onFinish, onCancel, 
                       {ex.prevWeight > 0 ? `${ex.prevWeight}kg×${ex.prevReps}` : "—"}
                     </div>
                     <div className="col-span-3">
-                      <input
-                        type="number"
-                        value={s.weight}
-                        onChange={(e) => onUpdateSet(exIdx, setIdx, "weight", e.target.value)}
-                        className="w-full text-center rounded-lg py-1.5 text-sm"
-                        style={{ background: COLORS.surfaceElevated, color: isPR ? COLORS.lime : COLORS.text, border: `1px solid ${isPR ? COLORS.lime : COLORS.borderSoft}`, ...display }}
-                      />
+                      <div className="relative">
+                        <input
+                          type="number"
+                          value={s.weight}
+                          onChange={(e) => onUpdateSet(exIdx, setIdx, "weight", e.target.value)}
+                          className="w-full text-center rounded-lg py-1.5 text-sm"
+                          style={{ background: COLORS.surfaceElevated, color: isPR ? COLORS.lime : COLORS.text, border: `1px solid ${isPR ? COLORS.lime : COLORS.borderSoft}`, ...display }}
+                        />
+                        {isPR && (
+                          <span
+                            className="absolute -top-2 -right-1.5 text-[9px] px-1 rounded"
+                            style={{ background: COLORS.lime, color: "#14151B", ...display, fontWeight: 700 }}
+                          >
+                            PR
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <div className="col-span-2">
                       <input
@@ -509,6 +475,7 @@ export default function App() {
 
   const [profile, setProfile] = useState(null);
   const [routines, setRoutines] = useState([]);
+  const [exercises, setExercises] = useState([]);
   const [recent, setRecent] = useState([]);
   const [streak, setStreak] = useState(0);
   const [weekVolume, setWeekVolume] = useState(0);
@@ -545,7 +512,7 @@ export default function App() {
         await seedDefaultRoutines();
         r = await listRoutines();
       }
-      const [recentW, weekStats, streakVal, trend, prs, prof, allTime] = await Promise.all([
+      const [recentW, weekStats, streakVal, trend, prs, prof, allTime, exerciseList] = await Promise.all([
         listRecentWorkouts(5),
         getThisWeekStats(),
         getStreak(),
@@ -553,6 +520,7 @@ export default function App() {
         getPersonalRecords(10),
         getProfile(),
         getAllTimeStats(),
+        listExercises(),
       ]);
       setRoutines(r);
       setRecent(recentW);
@@ -563,10 +531,20 @@ export default function App() {
       setPersonalRecords(prs);
       setProfile(prof);
       setAllTimeStats(allTime);
+      setExercises(exerciseList);
     } catch (e) {
       setErrorMsg(e.message || "資料載入失敗,請檢查網路連線");
     } finally {
       setDataLoading(false);
+    }
+  }, []);
+
+  const refreshRoutines = useCallback(async () => {
+    try {
+      const r = await listRoutines();
+      setRoutines(r);
+    } catch (e) {
+      setErrorMsg(e.message || "課表載入失敗");
     }
   }, []);
 
@@ -617,6 +595,58 @@ export default function App() {
       setActiveWorkout({ workoutId: w.id, routine, exercises });
     } catch (e) {
       setErrorMsg(e.message || "無法開始訓練,請再試一次");
+    }
+  };
+
+  const handleAddTemplate = async (template) => {
+    setErrorMsg(null);
+    try {
+      const byName = Object.fromEntries(exercises.map((e) => [e.name, e.id]));
+      const matched = template.exerciseNames.filter((n) => byName[n]);
+      if (matched.length === 0) throw new Error("找不到對應的動作,請確認動作庫是否已匯入");
+      await createRoutine({
+        name: template.name,
+        tag: template.tag,
+        estMinutes: template.estMinutes,
+        exercises: matched.map((n) => ({ exerciseId: byName[n], targetSets: 3, targetReps: 8 })),
+      });
+      await refreshRoutines();
+    } catch (e) {
+      setErrorMsg(e.message || "加入範本失敗,請再試一次");
+    }
+  };
+
+  const handleCreateRoutine = async (data) => {
+    setErrorMsg(null);
+    try {
+      await createRoutine({ name: data.name, tag: data.tag, estMinutes: data.estMinutes, exercises: data.exercises });
+      await refreshRoutines();
+      return true;
+    } catch (e) {
+      setErrorMsg(e.message || "建立課表失敗,請再試一次");
+      return false;
+    }
+  };
+
+  const handleUpdateRoutine = async (data) => {
+    setErrorMsg(null);
+    try {
+      await updateRoutine({ routineId: data.routineId, name: data.name, tag: data.tag, estMinutes: data.estMinutes, exercises: data.exercises });
+      await refreshRoutines();
+      return true;
+    } catch (e) {
+      setErrorMsg(e.message || "更新課表失敗,請再試一次");
+      return false;
+    }
+  };
+
+  const handleDeleteRoutine = async (routineId) => {
+    setErrorMsg(null);
+    try {
+      await deleteRoutine(routineId);
+      await refreshRoutines();
+    } catch (e) {
+      setErrorMsg(e.message || "刪除課表失敗,請再試一次");
     }
   };
 
@@ -729,7 +759,17 @@ export default function App() {
               {tab === "home" && (
                 <HomeScreen profile={profile} recent={recent} streak={streak} weekVolume={weekVolume} weekWorkouts={weekWorkouts} goToTrain={() => setTab("train")} />
               )}
-              {tab === "train" && <TrainScreen routines={routines} onStart={handleStartWorkout} />}
+              {tab === "train" && (
+                <TrainScreen
+                  routines={routines}
+                  exercises={exercises}
+                  onStart={handleStartWorkout}
+                  onAddTemplate={handleAddTemplate}
+                  onCreateRoutine={handleCreateRoutine}
+                  onUpdateRoutine={handleUpdateRoutine}
+                  onDeleteRoutine={handleDeleteRoutine}
+                />
+              )}
               {tab === "progress" && <ProgressScreen volumeTrend={volumeTrend} personalRecords={personalRecords} weekVolume={weekVolume} />}
               {tab === "me" && <MeScreen profile={profile} allTimeStats={allTimeStats} onSignOut={handleSignOut} />}
             </div>
