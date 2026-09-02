@@ -77,6 +77,7 @@ npm install
 | 首頁 - 最近訓練 | `listRecentWorkouts()` |
 | 首頁 / 訓練完成 - 分享 | `shareCard()`(`src/lib/share.js`,純前端,不需要後端) |
 | 訓練 - 課表列表 / 範本 / 自訂 | `listRoutines()`、`createRoutine()`、`updateRoutine()`、`deleteRoutine()` |
+| 訓練 - 補填某天的紀錄 | `createBackfilledWorkout({ date, routineId, routineName, durationMinutes, exercises })` |
 | 訓練中 - 開始訓練 | `startWorkout({ routineId, routineName })` |
 | 訓練中 - 打勾完成一組 | `upsertSet({ workoutId, exerciseId, ... })` |
 | 訓練中 - 連接心率手環 | `connectHeartRateMonitor()`(`src/lib/bluetooth.js`,純前端) |

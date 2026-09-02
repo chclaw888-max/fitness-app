@@ -13,6 +13,7 @@ import {
   getSession, onAuthStateChange, signOut, getProfile,
   listRoutines, seedDefaultRoutines, createRoutine, updateRoutine, deleteRoutine, listExercises,
   startWorkout as startWorkoutApi, upsertSet as upsertSetApi, finishWorkout as finishWorkoutApi,
+  createBackfilledWorkout,
   listRecentWorkouts, getThisWeekStats, getStreak,
   getVolumeTrend, getPersonalRecords, getPersonalRecordsMap, getAllTimeStats,
   listBodyMetrics, upsertBodyMetric, uploadBodyPhoto, getBodyPhotoUrl, deleteBodyMetric,
@@ -789,6 +790,18 @@ export default function App() {
     }
   };
 
+  const handleCreateBackfill = async (data) => {
+    setErrorMsg(null);
+    try {
+      await createBackfilledWorkout(data);
+      await loadAllData(); // 補填會影響連續天數、本週數據、最近訓練、個人紀錄,直接整批重新載入
+      return true;
+    } catch (e) {
+      setErrorMsg(e.message || "補填訓練紀錄失敗,請再試一次");
+      return false;
+    }
+  };
+
   const updateSet = (exIdx, setIdx, field, value) => {
     setActiveWorkout((w) => {
       const exercises = w.exercises.map((ex, i) => {
@@ -918,6 +931,7 @@ export default function App() {
                   onCreateRoutine={handleCreateRoutine}
                   onUpdateRoutine={handleUpdateRoutine}
                   onDeleteRoutine={handleDeleteRoutine}
+                  onCreateBackfill={handleCreateBackfill}
                 />
               )}
               {tab === "progress" && (

@@ -250,6 +250,70 @@ export async function finishWorkout({ workoutId, durationSeconds, heartRate }) {
   return data;
 }
 
+// 補填某一天的訓練紀錄(忘記即時記錄時使用)：一次性寫入 workouts + workout_sets，
+// 不經過即時訓練流程,直接以「已完成」狀態建立。
+// exercises: [{ exerciseId, exerciseName, sets: [{ weight, reps }] }]
+// 空的組(重量與次數都是 0 或空白)會被忽略,不會寫入
+export async function createBackfilledWorkout({ date, routineId, routineName, durationMinutes, exercises }) {
+  const userId = await getUserId();
+  const finishedAt = new Date(`${date}T12:00:00`).toISOString();
+  const prMap = await getPersonalRecordsMap();
+
+  let totalVolume = 0;
+  let totalSets = 0;
+  let prCount = 0;
+  const setRows = [];
+
+  exercises.forEach((ex) => {
+    const best = prMap[ex.exerciseId]?.weight ?? 0;
+    let setNumber = 0;
+    ex.sets.forEach((s) => {
+      const weight = Number(s.weight) || 0;
+      const reps = Number(s.reps) || 0;
+      if (weight <= 0 && reps <= 0) return;
+      setNumber += 1;
+      const isPr = weight > best;
+      totalVolume += weight * reps;
+      totalSets += 1;
+      if (isPr) prCount += 1;
+      setRows.push({
+        exercise_id: ex.exerciseId,
+        exercise_name: ex.exerciseName,
+        set_number: setNumber,
+        weight,
+        reps,
+        is_pr: isPr,
+        completed_at: finishedAt,
+      });
+    });
+  });
+
+  const { data: workout, error: wErr } = await supabase
+    .from("workouts")
+    .insert({
+      user_id: userId,
+      routine_id: routineId || null,
+      routine_name: routineName,
+      started_at: finishedAt,
+      finished_at: finishedAt,
+      duration_seconds: (Number(durationMinutes) || 45) * 60,
+      total_volume: totalVolume,
+      total_sets: totalSets,
+      pr_count: prCount,
+    })
+    .select()
+    .single();
+  if (wErr) throw wErr;
+
+  if (setRows.length > 0) {
+    const rows = setRows.map((r) => ({ ...r, workout_id: workout.id }));
+    const { error: sErr } = await supabase.from("workout_sets").insert(rows);
+    if (sErr) throw sErr;
+  }
+
+  return workout;
+}
+
 // 對應首頁「最近訓練」列表
 export async function listRecentWorkouts(limit = 5) {
   const { data, error } = await supabase
