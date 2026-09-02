@@ -358,7 +358,7 @@ export async function getPersonalRecordsMap() {
 export async function listBodyMetrics(limit = 60) {
   const { data, error } = await supabase
     .from("body_metrics")
-    .select("id, recorded_at, weight_kg, body_fat_pct, photo_path, note")
+    .select("id, recorded_at, weight_kg, body_fat_pct, muscle_mass_kg, visceral_fat_level, photo_path, note")
     .order("recorded_at", { ascending: false })
     .limit(limit);
   if (error) throw error;
@@ -366,13 +366,15 @@ export async function listBodyMetrics(limit = 60) {
 }
 
 // 同一天重複紀錄會覆蓋(upsert on user_id+recorded_at)
-export async function upsertBodyMetric({ recordedAt, weightKg, bodyFatPct, note, photoPath }) {
+export async function upsertBodyMetric({ recordedAt, weightKg, bodyFatPct, muscleMassKg, visceralFatLevel, note, photoPath }) {
   const userId = await getUserId();
   const payload = {
     user_id: userId,
     recorded_at: recordedAt,
     weight_kg: weightKg ?? null,
     body_fat_pct: bodyFatPct ?? null,
+    muscle_mass_kg: muscleMassKg ?? null,
+    visceral_fat_level: visceralFatLevel ?? null,
     note: note || null,
   };
   if (photoPath) payload.photo_path = photoPath;

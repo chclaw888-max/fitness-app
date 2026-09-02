@@ -595,7 +595,7 @@ export default function App() {
     refreshNutrition(date);
   };
 
-  const handleSaveBodyMetric = async ({ weight, bodyFat, note, photoFile }) => {
+  const handleSaveBodyMetric = async ({ weight, bodyFat, muscleMass, visceralFat, note, photoFile }) => {
     setBodyMetricSaving(true);
     setErrorMsg(null);
     try {
@@ -606,6 +606,8 @@ export default function App() {
         recordedAt,
         weightKg: weight ? Number(weight) : null,
         bodyFatPct: bodyFat ? Number(bodyFat) : null,
+        muscleMassKg: muscleMass ? Number(muscleMass) : null,
+        visceralFatLevel: visceralFat ? Number(visceralFat) : null,
         note,
         photoPath,
       });

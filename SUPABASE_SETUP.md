@@ -47,6 +47,7 @@ storage.buckets: body-photos (private)   體態照片,路徑規則 {user_id}/{fi
 | `001_user_id_defaults.sql` | 修正 `user_id` 欄位預設值 |
 | `002_more_exercises.sql` | 新增動作庫項目(支援課表範本) |
 | `003_phase3.sql` | 體態照片欄位、`body-photos` Storage bucket、營養紀錄表、心率欄位 |
+| `004_muscle_visceral_fat.sql` | `body_metrics` 新增肌肉量、內臟脂肪等級欄位 |
 
 ## 三、串接到前端專案
 

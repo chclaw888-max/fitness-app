@@ -166,6 +166,8 @@ function TrainingPanel({ volumeTrend, personalRecords, weekVolume }) {
 function BodyMetricEntryForm({ onSave, onCancel, saving }) {
   const [weight, setWeight] = useState("");
   const [bodyFat, setBodyFat] = useState("");
+  const [muscleMass, setMuscleMass] = useState("");
+  const [visceralFat, setVisceralFat] = useState("");
   const [note, setNote] = useState("");
   const [photoFile, setPhotoFile] = useState(null);
   const [photoPreview, setPhotoPreview] = useState(null);
@@ -190,6 +192,17 @@ function BodyMetricEntryForm({ onSave, onCancel, saving }) {
         </div>
       </div>
 
+      <div className="flex gap-3 mb-3">
+        <div className="flex-1">
+          <label className="text-xs mb-1.5 block" style={{ ...body, color: COLORS.textDim }}>肌肉量 (kg)</label>
+          <input type="number" value={muscleMass} onChange={(e) => setMuscleMass(e.target.value)} placeholder="32.0" className="w-full rounded-xl px-3 py-2.5 text-sm" style={inputStyle} />
+        </div>
+        <div className="flex-1">
+          <label className="text-xs mb-1.5 block" style={{ ...body, color: COLORS.textDim }}>內臟脂肪等級</label>
+          <input type="number" value={visceralFat} onChange={(e) => setVisceralFat(e.target.value)} placeholder="8" className="w-full rounded-xl px-3 py-2.5 text-sm" style={inputStyle} />
+        </div>
+      </div>
+
       <label className="text-xs mb-1.5 block" style={{ ...body, color: COLORS.textDim }}>照片(選填)</label>
       <label
         className="w-full rounded-xl mb-3 flex items-center justify-center gap-2 py-3 cursor-pointer"
@@ -211,7 +224,7 @@ function BodyMetricEntryForm({ onSave, onCancel, saving }) {
       <div className="flex gap-2">
         <button onClick={onCancel} className="flex-1 rounded-xl py-2.5 text-sm" style={{ background: COLORS.surfaceElevated, color: COLORS.textDim, ...body }}>取消</button>
         <button
-          onClick={() => onSave({ weight, bodyFat, note, photoFile })}
+          onClick={() => onSave({ weight, bodyFat, muscleMass, visceralFat, note, photoFile })}
           disabled={saving}
           className="flex-1 rounded-xl py-2.5 text-sm flex items-center justify-center gap-2"
           style={{ background: COLORS.accent, color: "#fff", ...body, fontWeight: 600 }}
@@ -315,32 +328,49 @@ function PhotoCompareSlider({ entries, onClose }) {
 function BodyMetricsPanel({ bodyMetrics, onSave, onDelete, saving }) {
   const [showForm, setShowForm] = useState(false);
   const [showCompare, setShowCompare] = useState(false);
+  const [chartMetric, setChartMetric] = useState("weight_kg");
 
-  const withWeight = [...bodyMetrics].filter((m) => m.weight_kg != null).reverse();
   const withPhotos = bodyMetrics.filter((m) => m.photo_path);
   const latest = bodyMetrics[0];
+
+  const METRICS = {
+    weight_kg: { label: "體重", unit: "kg", color: COLORS.lime },
+    body_fat_pct: { label: "體脂率", unit: "%", color: COLORS.accent },
+    muscle_mass_kg: { label: "肌肉量", unit: "kg", color: "#FF9F5C" },
+    visceral_fat_level: { label: "內臟脂肪", unit: "", color: "#FF5D5D" },
+  };
+  const chartData = [...bodyMetrics].filter((m) => m[chartMetric] != null).reverse();
+  const activeMeta = METRICS[chartMetric];
 
   return (
     <div>
       <div className="rounded-2xl p-4 mb-4" style={{ background: COLORS.surface, border: `1px solid ${COLORS.borderSoft}` }}>
-        <div className="flex items-center justify-between mb-2">
-          <div>
-            <div className="text-xs" style={{ ...body, color: COLORS.textDim }}>目前體重</div>
-            <div className="text-2xl" style={{ ...display, color: COLORS.text, fontWeight: 700 }}>
-              {latest?.weight_kg ? `${latest.weight_kg} kg` : "—"}
-            </div>
-          </div>
-          {latest?.body_fat_pct && (
-            <div className="text-right">
-              <div className="text-xs" style={{ ...body, color: COLORS.textDim }}>體脂率</div>
-              <div style={{ ...display, color: COLORS.text, fontWeight: 700, fontSize: "18px" }}>{latest.body_fat_pct}%</div>
-            </div>
-          )}
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          {Object.entries(METRICS).map(([key, meta]) => {
+            const value = latest?.[key];
+            const active = chartMetric === key;
+            return (
+              <button
+                key={key}
+                onClick={() => setChartMetric(key)}
+                className="text-left rounded-xl p-2.5"
+                style={{ background: active ? COLORS.accentSoft : "transparent", border: `1px solid ${active ? COLORS.accent : "transparent"}` }}
+              >
+                <div className="text-xs" style={{ ...body, color: COLORS.textDim }}>{meta.label}</div>
+                <div className="text-xl" style={{ ...display, color: COLORS.text, fontWeight: 700 }}>
+                  {value != null ? `${value}${meta.unit}` : "—"}
+                </div>
+              </button>
+            );
+          })}
         </div>
-        {withWeight.length > 1 ? (
-          <LineChart points={withWeight.map((m) => ({ value: Number(m.weight_kg) }))} color={COLORS.lime} />
+        {chartData.length > 1 ? (
+          <>
+            <LineChart points={chartData.map((m) => ({ value: Number(m[chartMetric]) }))} color={activeMeta.color} />
+            <div className="text-xs text-center mt-2" style={{ ...body, color: COLORS.textFaint }}>{activeMeta.label}趨勢(近 {chartData.length} 筆紀錄)</div>
+          </>
         ) : (
-          <div className="text-sm text-center py-4" style={{ ...body, color: COLORS.textFaint }}>累積更多紀錄後這裡會顯示體重趨勢</div>
+          <div className="text-sm text-center py-4" style={{ ...body, color: COLORS.textFaint }}>累積更多「{activeMeta.label}」紀錄後這裡會顯示趨勢圖</div>
         )}
       </div>
 
@@ -386,7 +416,12 @@ function BodyMetricsPanel({ bodyMetrics, onSave, onDelete, saving }) {
               <div className="flex-1">
                 <div className="text-sm" style={{ ...body, color: COLORS.text, fontWeight: 600 }}>{fmtDate(m.recorded_at)}</div>
                 <div className="text-xs" style={{ ...body, color: COLORS.textFaint }}>
-                  {[m.weight_kg && `${m.weight_kg} kg`, m.body_fat_pct && `${m.body_fat_pct}%`].filter(Boolean).join(" · ") || m.note || "—"}
+                  {[
+                    m.weight_kg != null && `${m.weight_kg} kg`,
+                    m.body_fat_pct != null && `體脂 ${m.body_fat_pct}%`,
+                    m.muscle_mass_kg != null && `肌肉 ${m.muscle_mass_kg}kg`,
+                    m.visceral_fat_level != null && `內臟脂肪 ${m.visceral_fat_level}`,
+                  ].filter(Boolean).join(" · ") || m.note || "—"}
                 </div>
               </div>
               <button onClick={() => onDelete(m.id)} style={{ color: COLORS.textFaint }}><Trash2 size={15} /></button>
