@@ -12,6 +12,7 @@ import { shareCard } from "./lib/share";
 import {
   getSession, onAuthStateChange, signOut, getProfile,
   listRoutines, seedDefaultRoutines, createRoutine, updateRoutine, deleteRoutine, listExercises,
+  createCustomExercise, updateExercise, deleteExercise,
   startWorkout as startWorkoutApi, upsertSet as upsertSetApi, finishWorkout as finishWorkoutApi,
   createBackfilledWorkout,
   listRecentWorkouts, getThisWeekStats, getStreak,
@@ -575,6 +576,32 @@ export default function App() {
     }
   }, []);
 
+  const refreshExercises = useCallback(async () => {
+    try {
+      setExercises(await listExercises());
+    } catch (e) {
+      setErrorMsg(e.message || "動作庫載入失敗");
+    }
+  }, []);
+
+  const handleCreateExercise = async (data) => {
+    setErrorMsg(null);
+    await createCustomExercise(data);
+    await refreshExercises();
+  };
+
+  const handleUpdateExercise = async (exerciseId, data) => {
+    setErrorMsg(null);
+    await updateExercise(exerciseId, data);
+    await refreshExercises();
+  };
+
+  const handleDeleteExercise = async (exerciseId) => {
+    setErrorMsg(null);
+    await deleteExercise(exerciseId);
+    await refreshExercises();
+  };
+
   const refreshBodyMetrics = useCallback(async () => {
     try {
       setBodyMetrics(await listBodyMetrics(60));
@@ -932,6 +959,9 @@ export default function App() {
                   onUpdateRoutine={handleUpdateRoutine}
                   onDeleteRoutine={handleDeleteRoutine}
                   onCreateBackfill={handleCreateBackfill}
+                  onCreateExercise={handleCreateExercise}
+                  onUpdateExercise={handleUpdateExercise}
+                  onDeleteExercise={handleDeleteExercise}
                 />
               )}
               {tab === "progress" && (

@@ -151,8 +151,52 @@ function TemplateLibrary({ onBack, onAdd, existingNames, addingId }) {
 
 /* ----------------------------- 動作選擇器 ----------------------------- */
 
-function ExercisePicker({ exercises, selectedIds, onToggle, onClose }) {
+const CATEGORIES = ["胸", "背", "腿", "肩", "手臂", "核心", "有氧", "其他"];
+
+function ExerciseEditForm({ initial, onSave, onCancel, saving }) {
+  const [name, setName] = useState(initial?.name || "");
+  const [category, setCategory] = useState(initial?.category || "其他");
+  const [error, setError] = useState(null);
+
+  const handleSave = () => {
+    if (!name.trim()) { setError("請輸入動作名稱"); return; }
+    setError(null);
+    onSave({ name: name.trim(), category });
+  };
+
+  return (
+    <div className="rounded-xl p-3 mb-2" style={{ background: COLORS.surfaceElevated, border: `1px solid ${COLORS.accent}` }}>
+      <div className="flex gap-2 mb-2">
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="動作名稱"
+          className="flex-1 rounded-lg px-3 py-2 text-sm"
+          style={inputStyle}
+        />
+        <select value={category} onChange={(e) => setCategory(e.target.value)} className="rounded-lg px-2 py-2 text-sm" style={{ ...inputStyle, width: "84px" }}>
+          {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+      </div>
+      {error && <div className="text-xs mb-2" style={{ ...body, color: COLORS.danger }}>{error}</div>}
+      <div className="flex gap-2">
+        <button onClick={onCancel} className="flex-1 rounded-lg py-2 text-xs" style={{ background: COLORS.surface, color: COLORS.textDim, ...body }}>取消</button>
+        <button onClick={handleSave} disabled={saving} className="flex-1 rounded-lg py-2 text-xs flex items-center justify-center gap-1.5" style={{ background: COLORS.accent, color: "#fff", ...body, fontWeight: 600 }}>
+          {saving && <Loader2 size={12} className="animate-spin" />}
+          {saving ? "儲存中…" : "儲存"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ExercisePicker({ exercises, selectedIds, onToggle, onClose, onCreateExercise, onUpdateExercise, onDeleteExercise }) {
   const [query, setQuery] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+
   const grouped = useMemo(() => {
     const filtered = exercises.filter((e) => e.name.toLowerCase().includes(query.toLowerCase()));
     const g = {};
@@ -163,14 +207,50 @@ function ExercisePicker({ exercises, selectedIds, onToggle, onClose }) {
     return g;
   }, [exercises, query]);
 
+  const handleCreate = async (data) => {
+    setSaving(true);
+    setError(null);
+    try {
+      await onCreateExercise(data);
+      setCreating(false);
+    } catch (e) {
+      setError(e.message || "新增動作失敗");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleUpdate = async (exerciseId, data) => {
+    setSaving(true);
+    setError(null);
+    try {
+      await onUpdateExercise(exerciseId, data);
+      setEditingId(null);
+    } catch (e) {
+      setError(e.message || "更新動作失敗");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (ex) => {
+    if (!window.confirm(`確定要刪除「${ex.name}」嗎？`)) return;
+    setError(null);
+    try {
+      await onDeleteExercise(ex.id);
+    } catch (e) {
+      setError(e.message?.includes("foreign key") ? "這個動作已經用在課表或訓練紀錄裡,無法刪除" : e.message || "刪除失敗");
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-30 flex flex-col" style={{ background: COLORS.bg }}>
       <div className="flex items-center gap-3 px-5 shrink-0" style={{ paddingTop: "calc(14px + env(safe-area-inset-top))", paddingBottom: "12px", borderBottom: `1px solid ${COLORS.borderSoft}` }}>
         <button onClick={onClose} style={{ color: COLORS.textDim }}><X size={20} /></button>
         <div style={{ ...display, color: COLORS.text, fontWeight: 700 }}>選擇動作</div>
       </div>
-      <div className="px-5 py-3 shrink-0">
-        <div className="flex items-center gap-2 rounded-xl px-3 py-2.5" style={{ background: COLORS.surfaceElevated, border: `1px solid ${COLORS.borderSoft}` }}>
+      <div className="px-5 pt-3 shrink-0">
+        <div className="flex items-center gap-2 rounded-xl px-3 py-2.5 mb-2" style={{ background: COLORS.surfaceElevated, border: `1px solid ${COLORS.borderSoft}` }}>
           <Search size={15} color={COLORS.textFaint} />
           <input
             value={query}
@@ -180,6 +260,22 @@ function ExercisePicker({ exercises, selectedIds, onToggle, onClose }) {
             style={{ color: COLORS.text, ...body }}
           />
         </div>
+        {!creating && (
+          <button
+            onClick={() => setCreating(true)}
+            className="w-full flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-sm mb-1"
+            style={{ background: "transparent", border: `1px dashed ${COLORS.borderSoft}`, color: COLORS.textDim, ...body, fontWeight: 600 }}
+          >
+            <Plus size={14} />
+            新增自訂動作
+          </button>
+        )}
+        {creating && (
+          <div className="mb-1">
+            <ExerciseEditForm onSave={handleCreate} onCancel={() => { setCreating(false); setError(null); }} saving={saving} />
+          </div>
+        )}
+        {error && <div className="text-xs mb-2 px-1" style={{ ...body, color: COLORS.danger }}>{error}</div>}
       </div>
       <div className="flex-1 overflow-y-auto px-5 pb-6">
         {Object.entries(grouped).map(([category, list]) => (
@@ -188,16 +284,45 @@ function ExercisePicker({ exercises, selectedIds, onToggle, onClose }) {
             <div className="flex flex-col gap-2">
               {list.map((ex) => {
                 const selected = selectedIds.includes(ex.id);
+                const isCustom = !!ex.created_by;
+
+                if (editingId === ex.id) {
+                  return (
+                    <ExerciseEditForm
+                      key={ex.id}
+                      initial={ex}
+                      onSave={(data) => handleUpdate(ex.id, data)}
+                      onCancel={() => { setEditingId(null); setError(null); }}
+                      saving={saving}
+                    />
+                  );
+                }
+
                 return (
-                  <button
+                  <div
                     key={ex.id}
-                    onClick={() => onToggle(ex)}
-                    className="flex items-center justify-between rounded-xl px-4 py-3"
-                    style={{ background: selected ? COLORS.accentSoft : COLORS.surface, border: `1px solid ${selected ? COLORS.accent : COLORS.borderSoft}` }}
+                    className="flex items-center rounded-xl overflow-hidden"
+                    style={{ border: `1px solid ${selected ? COLORS.accent : COLORS.borderSoft}` }}
                   >
-                    <span className="text-sm" style={{ ...body, color: COLORS.text }}>{ex.name}</span>
-                    {selected && <Check size={16} color={COLORS.accent} />}
-                  </button>
+                    <button
+                      onClick={() => onToggle(ex)}
+                      className="flex-1 flex items-center justify-between px-4 py-3"
+                      style={{ background: selected ? COLORS.accentSoft : COLORS.surface }}
+                    >
+                      <span className="text-sm" style={{ ...body, color: COLORS.text }}>{ex.name}</span>
+                      {selected && <Check size={16} color={COLORS.accent} />}
+                    </button>
+                    {isCustom && (
+                      <div className="flex items-center shrink-0" style={{ background: selected ? COLORS.accentSoft : COLORS.surface }}>
+                        <button onClick={() => { setEditingId(ex.id); setError(null); }} className="w-9 h-9 flex items-center justify-center" style={{ color: COLORS.textFaint }}>
+                          <Pencil size={13} />
+                        </button>
+                        <button onClick={() => handleDelete(ex)} className="w-9 h-9 flex items-center justify-center mr-1" style={{ color: COLORS.textFaint }}>
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 );
               })}
             </div>
@@ -218,7 +343,7 @@ function ExercisePicker({ exercises, selectedIds, onToggle, onClose }) {
 
 /* ----------------------------- 自訂課表編輯器 ----------------------------- */
 
-function RoutineBuilder({ routine, exercises, onSave, onCancel, saving }) {
+function RoutineBuilder({ routine, exercises, onSave, onCancel, saving, onCreateExercise, onUpdateExercise, onDeleteExercise }) {
   const isEdit = !!routine;
   const [name, setName] = useState(routine?.name || "");
   const [tag, setTag] = useState(routine?.tag || "");
@@ -353,6 +478,9 @@ function RoutineBuilder({ routine, exercises, onSave, onCancel, saving }) {
           selectedIds={selected.map((s) => s.exerciseId)}
           onToggle={toggleExercise}
           onClose={() => setPickerOpen(false)}
+          onCreateExercise={onCreateExercise}
+          onUpdateExercise={onUpdateExercise}
+          onDeleteExercise={onDeleteExercise}
         />
       )}
     </div>
@@ -365,7 +493,7 @@ function todayStr() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function BackfillForm({ routines, exercises, onSave, onCancel, saving }) {
+function BackfillForm({ routines, exercises, onSave, onCancel, saving, onCreateExercise, onUpdateExercise, onDeleteExercise }) {
   const [date, setDate] = useState(todayStr());
   const [routineId, setRoutineId] = useState("");
   const [durationMinutes, setDurationMinutes] = useState(45);
@@ -533,6 +661,9 @@ function BackfillForm({ routines, exercises, onSave, onCancel, saving }) {
           selectedIds={selected.map((s) => s.exerciseId)}
           onToggle={toggleExercise}
           onClose={() => setPickerOpen(false)}
+          onCreateExercise={onCreateExercise}
+          onUpdateExercise={onUpdateExercise}
+          onDeleteExercise={onDeleteExercise}
         />
       )}
     </div>
@@ -541,7 +672,10 @@ function BackfillForm({ routines, exercises, onSave, onCancel, saving }) {
 
 /* ----------------------------- 主要匯出:訓練頁 ----------------------------- */
 
-export default function TrainScreen({ routines, exercises, onStart, onAddTemplate, onCreateRoutine, onUpdateRoutine, onDeleteRoutine, onCreateBackfill }) {
+export default function TrainScreen({
+  routines, exercises, onStart, onAddTemplate, onCreateRoutine, onUpdateRoutine, onDeleteRoutine, onCreateBackfill,
+  onCreateExercise, onUpdateExercise, onDeleteExercise,
+}) {
   const [view, setView] = useState("list"); // list | templates | builder | backfill
   const [editingRoutine, setEditingRoutine] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -605,6 +739,9 @@ export default function TrainScreen({ routines, exercises, onStart, onAddTemplat
         onSave={handleSaveRoutine}
         onCancel={() => { setView("list"); setEditingRoutine(null); }}
         saving={saving}
+        onCreateExercise={onCreateExercise}
+        onUpdateExercise={onUpdateExercise}
+        onDeleteExercise={onDeleteExercise}
       />
     );
   }
@@ -617,6 +754,9 @@ export default function TrainScreen({ routines, exercises, onStart, onAddTemplat
         onSave={handleSaveBackfill}
         onCancel={() => setView("list")}
         saving={saving}
+        onCreateExercise={onCreateExercise}
+        onUpdateExercise={onUpdateExercise}
+        onDeleteExercise={onDeleteExercise}
       />
     );
   }

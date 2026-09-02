@@ -175,6 +175,24 @@ export async function createCustomExercise({ name, category }) {
   return data;
 }
 
+// 只能編輯自己新增的自訂動作,系統預設動作會被 RLS 擋下來
+export async function updateExercise(exerciseId, { name, category }) {
+  const { data, error } = await supabase
+    .from("exercises")
+    .update({ name, category })
+    .eq("id", exerciseId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+// 若這個動作已經被課表或訓練紀錄使用(外鍵限制),刪除會失敗並丟出錯誤
+export async function deleteExercise(exerciseId) {
+  const { error } = await supabase.from("exercises").delete().eq("id", exerciseId);
+  if (error) throw error;
+}
+
 /* =============================================================
  * 訓練場次(workouts / workout_sets)
  * 對應 App.jsx 裡的 ActiveWorkout 畫面
