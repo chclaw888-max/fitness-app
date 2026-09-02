@@ -220,7 +220,8 @@ export async function upsertSet({ workoutId, exerciseId, exerciseName, setNumber
 }
 
 // 完成訓練：結算總量/總組數/PR 數，寫回 workouts row
-export async function finishWorkout({ workoutId, durationSeconds }) {
+// heartRate: 選用，來自 Web Bluetooth 心率裝置 { avg, max }
+export async function finishWorkout({ workoutId, durationSeconds, heartRate }) {
   const { data: sets, error: setsErr } = await supabase
     .from("workout_sets")
     .select("weight, reps, is_pr")
@@ -239,6 +240,8 @@ export async function finishWorkout({ workoutId, durationSeconds }) {
       total_volume: totalVolume,
       total_sets: sets.length,
       pr_count: prCount,
+      avg_heart_rate: heartRate?.avg ?? null,
+      max_heart_rate: heartRate?.max ?? null,
     })
     .eq("id", workoutId)
     .select()
@@ -346,4 +349,100 @@ export async function getPersonalRecordsMap() {
   const { data, error } = await supabase.from("v_personal_records").select("exercise_id, weight, reps");
   if (error) throw error;
   return Object.fromEntries(data.map((r) => [r.exercise_id, { weight: Number(r.weight), reps: r.reps }]));
+}
+
+/* =============================================================
+ * 體態紀錄(body_metrics)+ 照片
+ * ============================================================= */
+
+export async function listBodyMetrics(limit = 60) {
+  const { data, error } = await supabase
+    .from("body_metrics")
+    .select("id, recorded_at, weight_kg, body_fat_pct, photo_path, note")
+    .order("recorded_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return data;
+}
+
+// 同一天重複紀錄會覆蓋(upsert on user_id+recorded_at)
+export async function upsertBodyMetric({ recordedAt, weightKg, bodyFatPct, note, photoPath }) {
+  const userId = await getUserId();
+  const payload = {
+    user_id: userId,
+    recorded_at: recordedAt,
+    weight_kg: weightKg ?? null,
+    body_fat_pct: bodyFatPct ?? null,
+    note: note || null,
+  };
+  if (photoPath) payload.photo_path = photoPath;
+  const { data, error } = await supabase
+    .from("body_metrics")
+    .upsert(payload, { onConflict: "user_id,recorded_at" })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+// 上傳體態照片到私有 Storage bucket，回傳可存入 body_metrics.photo_path 的路徑
+export async function uploadBodyPhoto(file, recordedAt) {
+  const userId = await getUserId();
+  const ext = file.name.split(".").pop() || "jpg";
+  const path = `${userId}/${recordedAt}-${Date.now()}.${ext}`;
+  const { error } = await supabase.storage.from("body-photos").upload(path, file, { upsert: true });
+  if (error) throw error;
+  return path;
+}
+
+// bucket 是私有的，讀取照片要用短期簽章網址(預設 1 小時)
+export async function getBodyPhotoUrl(path) {
+  if (!path) return null;
+  const { data, error } = await supabase.storage.from("body-photos").createSignedUrl(path, 3600);
+  if (error) throw error;
+  return data.signedUrl;
+}
+
+export async function deleteBodyMetric(id) {
+  const { error } = await supabase.from("body_metrics").delete().eq("id", id);
+  if (error) throw error;
+}
+
+/* =============================================================
+ * 營養追蹤(nutrition_logs)
+ * ============================================================= */
+
+export async function listNutritionLogs(date) {
+  const { data, error } = await supabase
+    .from("nutrition_logs")
+    .select("id, logged_at, meal, calories, protein_g, carbs_g, fat_g, note, created_at")
+    .eq("logged_at", date)
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  return data;
+}
+
+export async function addNutritionEntry({ loggedAt, meal, calories, proteinG, carbsG, fatG, note }) {
+  const userId = await getUserId();
+  const { data, error } = await supabase
+    .from("nutrition_logs")
+    .insert({
+      user_id: userId,
+      logged_at: loggedAt,
+      meal,
+      calories: calories || 0,
+      protein_g: proteinG || 0,
+      carbs_g: carbsG || 0,
+      fat_g: fatG || 0,
+      note: note || null,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteNutritionEntry(id) {
+  const { error } = await supabase.from("nutrition_logs").delete().eq("id", id);
+  if (error) throw error;
 }

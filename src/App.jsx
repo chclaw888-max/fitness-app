@@ -1,17 +1,22 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
   Flame, Dumbbell, TrendingUp, User, Home, Play, Check, Clock, Trophy,
-  ChevronRight, ArrowLeft, LogOut, AlertCircle, Loader2,
+  ChevronRight, ArrowLeft, LogOut, AlertCircle, Loader2, Heart, Bluetooth, Share2,
 } from "lucide-react";
 import { COLORS, display, body } from "./theme";
 import AuthScreen from "./components/AuthScreen";
 import TrainScreen from "./components/TrainScreen";
+import ProgressPanels from "./components/ProgressPanels";
+import { connectHeartRateMonitor, isBluetoothSupported } from "./lib/bluetooth";
+import { shareCard } from "./lib/share";
 import {
   getSession, onAuthStateChange, signOut, getProfile,
   listRoutines, seedDefaultRoutines, createRoutine, updateRoutine, deleteRoutine, listExercises,
   startWorkout as startWorkoutApi, upsertSet as upsertSetApi, finishWorkout as finishWorkoutApi,
   listRecentWorkouts, getThisWeekStats, getStreak,
   getVolumeTrend, getPersonalRecords, getPersonalRecordsMap, getAllTimeStats,
+  listBodyMetrics, upsertBodyMetric, uploadBodyPhoto, getBodyPhotoUrl, deleteBodyMetric,
+  listNutritionLogs, addNutritionEntry, deleteNutritionEntry,
 } from "./lib/api";
 
 /* ----------------------------- 共用小元件 ----------------------------- */
@@ -96,6 +101,28 @@ function fmtDate(iso) {
 /* ----------------------------- 首頁 ----------------------------- */
 
 function HomeScreen({ profile, recent, streak, weekVolume, weekWorkouts, goToTrain }) {
+  const [sharingStreak, setSharingStreak] = useState(false);
+
+  const handleShareStreak = async () => {
+    setSharingStreak(true);
+    try {
+      await shareCard({
+        title: `連續訓練 ${streak} 天`,
+        subtitle: "堅持就是最好的成績",
+        stats: [
+          { label: "本週訓練量 (kg)", value: Math.round(weekVolume).toLocaleString() },
+          { label: "本週次數", value: `${weekWorkouts} / 5`, accent: true },
+        ],
+        textFallback: `我已經連續訓練 ${streak} 天了！`,
+        filename: "streak.png",
+      });
+    } catch (e) {
+      // 使用者取消或裝置不支援，靜默即可
+    } finally {
+      setSharingStreak(false);
+    }
+  };
+
   return (
     <div className="px-5 pb-6">
       <div className="pt-2 pb-5">
@@ -120,6 +147,9 @@ function HomeScreen({ profile, recent, streak, weekVolume, weekWorkouts, goToTra
             <div className="text-xs" style={{ ...body, color: COLORS.textDim }}>保持下去,別中斷紀錄</div>
           </div>
         </div>
+        <button onClick={handleShareStreak} disabled={sharingStreak} className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: COLORS.surface }}>
+          {sharingStreak ? <Loader2 size={15} color={COLORS.textDim} className="animate-spin" /> : <Share2 size={15} color={COLORS.textDim} />}
+        </button>
       </div>
 
       <div className="flex gap-3 mb-5">
@@ -164,92 +194,6 @@ function HomeScreen({ profile, recent, streak, weekVolume, weekWorkouts, goToTra
 }
 
 /* ----------------------------- 進度 ----------------------------- */
-
-function VolumeChart({ trend }) {
-  const w = 280, h = 110, pad = 10;
-  const values = trend.map((d) => Number(d.volume));
-  const max = Math.max(...values, 1);
-  const min = Math.min(...values, 0);
-  const range = max - min || 1;
-  const step = trend.length > 1 ? (w - pad * 2) / (trend.length - 1) : 0;
-  const points = trend.map((d, i) => {
-    const x = pad + i * step;
-    const y = h - pad - ((Number(d.volume) - min) / range) * (h - pad * 2);
-    return { x, y };
-  });
-  const pathD = points.map((p, i) => `${i === 0 ? "M" : "L"}${p.x},${p.y}`).join(" ");
-  const areaD = points.length ? `${pathD} L${points[points.length - 1].x},${h} L${points[0].x},${h} Z` : "";
-
-  return (
-    <svg viewBox={`0 0 ${w} ${h}`} className="w-full" style={{ overflow: "visible" }}>
-      <defs>
-        <linearGradient id="volFill" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={COLORS.accent} stopOpacity="0.35" />
-          <stop offset="100%" stopColor={COLORS.accent} stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      {points.length > 0 && <path d={areaD} fill="url(#volFill)" />}
-      <path d={pathD} fill="none" stroke={COLORS.accent} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-      {points.map((p, i) => (
-        <circle key={i} cx={p.x} cy={p.y} r={i === points.length - 1 ? 4 : 2.5} fill={i === points.length - 1 ? COLORS.lime : COLORS.accent} />
-      ))}
-    </svg>
-  );
-}
-
-function ProgressScreen({ volumeTrend, personalRecords, weekVolume }) {
-  return (
-    <div className="px-5 pb-6">
-      <div className="pt-2 pb-5">
-        <div className="text-2xl" style={{ ...display, color: COLORS.text, fontWeight: 700 }}>你的進度</div>
-        <div className="text-sm mt-1" style={{ ...body, color: COLORS.textDim }}>過去幾週的訓練趨勢</div>
-      </div>
-
-      <div className="rounded-2xl p-4 mb-3" style={{ background: COLORS.surface, border: `1px solid ${COLORS.borderSoft}` }}>
-        <div className="mb-2">
-          <div className="text-xs" style={{ ...body, color: COLORS.textDim }}>本週訓練量</div>
-          <div className="text-2xl" style={{ ...display, color: COLORS.text, fontWeight: 700 }}>{Math.round(weekVolume).toLocaleString()} kg</div>
-        </div>
-        {volumeTrend.length > 0 ? (
-          <>
-            <VolumeChart trend={volumeTrend} />
-            <div className="flex justify-between mt-1">
-              {volumeTrend.map((d, i) => (
-                <span key={i} className="text-xs" style={{ ...body, color: COLORS.textFaint }}>
-                  {new Date(d.week_start).getMonth() + 1}/{new Date(d.week_start).getDate()}
-                </span>
-              ))}
-            </div>
-          </>
-        ) : (
-          <div className="text-sm text-center py-4" style={{ ...body, color: COLORS.textFaint }}>累積更多訓練後這裡會顯示趨勢圖</div>
-        )}
-      </div>
-
-      <div className="text-sm mb-3" style={{ ...body, color: COLORS.textDim, fontWeight: 600 }}>個人紀錄</div>
-      {personalRecords.length === 0 ? (
-        <div className="text-sm text-center py-6" style={{ ...body, color: COLORS.textFaint }}>還沒有個人紀錄</div>
-      ) : (
-        <div className="flex flex-col gap-3">
-          {personalRecords.map((p, i) => (
-            <div key={i} className="rounded-2xl p-4 flex items-center justify-between" style={{ background: COLORS.surface, border: `1px solid ${COLORS.borderSoft}` }}>
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: COLORS.limeSoft }}>
-                  <Trophy size={16} color={COLORS.lime} />
-                </div>
-                <div>
-                  <div style={{ ...body, color: COLORS.text, fontWeight: 600 }}>{p.exercise_name}</div>
-                  <div className="text-xs" style={{ ...body, color: COLORS.textFaint }}>{fmtDate(p.completed_at)}</div>
-                </div>
-              </div>
-              <div style={{ ...display, color: COLORS.text, fontWeight: 700 }}>{p.weight} kg</div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
 /* ----------------------------- 我的 ----------------------------- */
 
@@ -298,7 +242,10 @@ function MeScreen({ profile, allTimeStats, onSignOut }) {
 
 /* ----------------------------- 訓練進行中 ----------------------------- */
 
-function ActiveWorkout({ workout, onUpdateSet, onToggleSet, onFinish, onCancel, elapsedSec, restSeconds, onSkipRest, onAddRest, finishing }) {
+function ActiveWorkout({
+  workout, onUpdateSet, onToggleSet, onFinish, onCancel, elapsedSec, restSeconds, onSkipRest, onAddRest, finishing,
+  hrSupported, hrConnection, hrCurrent, hrConnecting, hrError, onConnectHeartRate, onDisconnectHeartRate,
+}) {
   const fmtTime = (s) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
   const totalSets = workout.exercises.reduce((a, e) => a + e.sets.length, 0);
   const doneSets = workout.exercises.reduce((a, e) => a + e.sets.filter((s) => s.done).length, 0);
@@ -333,6 +280,29 @@ function ActiveWorkout({ workout, onUpdateSet, onToggleSet, onFinish, onCancel, 
           {fmtTime(elapsedSec)}
         </div>
       </div>
+
+      {hrSupported && (
+        <div className="flex items-center justify-between px-5 py-2 shrink-0" style={{ borderBottom: `1px solid ${COLORS.borderSoft}` }}>
+          {hrConnection ? (
+            <>
+              <div className="flex items-center gap-2">
+                <Heart size={15} color={COLORS.danger} fill={COLORS.danger} />
+                <span style={{ ...display, color: COLORS.text, fontWeight: 700, fontSize: "15px" }}>{hrCurrent ?? "—"}</span>
+                <span className="text-xs" style={{ ...body, color: COLORS.textFaint }}>bpm · {hrConnection.deviceName}</span>
+              </div>
+              <button onClick={onDisconnectHeartRate} className="text-xs" style={{ ...body, color: COLORS.textDim }}>中斷連線</button>
+            </>
+          ) : (
+            <button onClick={onConnectHeartRate} disabled={hrConnecting} className="flex items-center gap-1.5 text-xs" style={{ ...body, color: COLORS.textDim }}>
+              {hrConnecting ? <Loader2 size={13} className="animate-spin" /> : <Bluetooth size={13} />}
+              {hrConnecting ? "連接中…" : "連接心率手環(選用)"}
+            </button>
+          )}
+        </div>
+      )}
+      {hrError && (
+        <div className="mx-5 mt-2 text-xs px-3 py-2 rounded-lg shrink-0" style={{ background: COLORS.dangerSoft, color: COLORS.danger, ...body }}>{hrError}</div>
+      )}
 
       <div className="flex-1 overflow-y-auto px-5 py-4">
         <div className="flex flex-col gap-4">
@@ -430,6 +400,29 @@ function ActiveWorkout({ workout, onUpdateSet, onToggleSet, onFinish, onCancel, 
 }
 
 function SummaryModal({ summary, onDone }) {
+  const [sharing, setSharing] = useState(false);
+
+  const handleShare = async () => {
+    setSharing(true);
+    try {
+      await shareCard({
+        title: "訓練完成！",
+        subtitle: new Date().toLocaleDateString("zh-TW", { month: "long", day: "numeric" }),
+        stats: [
+          { label: "訓練時間", value: summary.duration },
+          { label: "總訓練量 (kg)", value: summary.volume.toLocaleString() },
+          ...(summary.prCount > 0 ? [{ label: "創造新紀錄", value: `${summary.prCount} 項`, accent: true }] : []),
+        ],
+        textFallback: `完成訓練！總訓練量 ${summary.volume.toLocaleString()} kg`,
+        filename: "workout-summary.png",
+      });
+    } catch (e) {
+      // 使用者取消或裝置不支援，靜默即可
+    } finally {
+      setSharing(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-20 flex items-center justify-center px-6" style={{ background: "rgba(0,0,0,0.55)" }}>
       <div className="w-full rounded-2xl p-6" style={{ maxWidth: "360px", background: COLORS.surface, border: `1px solid ${COLORS.borderSoft}` }}>
@@ -442,7 +435,7 @@ function SummaryModal({ summary, onDone }) {
         <div className="text-center text-sm mb-5" style={{ ...body, color: COLORS.textDim }}>
           {summary.prCount > 0 ? `太棒了,創造了 ${summary.prCount} 項新紀錄` : "做得好,繼續保持"}
         </div>
-        <div className="flex justify-between mb-6">
+        <div className="flex justify-between mb-4">
           <div className="text-center flex-1">
             <div style={{ ...display, color: COLORS.text, fontWeight: 700, fontSize: "20px" }}>{summary.duration}</div>
             <div className="text-xs" style={{ ...body, color: COLORS.textFaint }}>訓練時間</div>
@@ -456,9 +449,26 @@ function SummaryModal({ summary, onDone }) {
             <div className="text-xs" style={{ ...body, color: COLORS.textFaint }}>完成組數</div>
           </div>
         </div>
-        <button onClick={onDone} className="w-full rounded-2xl py-3.5" style={{ background: COLORS.accent, color: "#fff" }}>
-          <span style={{ ...display, fontWeight: 700 }}>完成</span>
-        </button>
+        {summary.heartRate && (
+          <div className="flex items-center justify-center gap-1.5 mb-5 text-sm" style={{ ...body, color: COLORS.textDim }}>
+            <Heart size={14} color={COLORS.danger} fill={COLORS.danger} />
+            平均心率 {summary.heartRate.avg} bpm · 最高 {summary.heartRate.max} bpm
+          </div>
+        )}
+        <div className="flex gap-2">
+          <button
+            onClick={handleShare}
+            disabled={sharing}
+            className="flex-1 rounded-2xl py-3.5 flex items-center justify-center gap-2"
+            style={{ background: COLORS.surfaceElevated, color: COLORS.text }}
+          >
+            {sharing ? <Loader2 size={16} className="animate-spin" /> : <Share2 size={16} />}
+            <span style={{ ...display, fontWeight: 700 }}>分享</span>
+          </button>
+          <button onClick={onDone} className="flex-1 rounded-2xl py-3.5" style={{ background: COLORS.accent, color: "#fff" }}>
+            <span style={{ ...display, fontWeight: 700 }}>完成</span>
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -484,12 +494,24 @@ export default function App() {
   const [personalRecords, setPersonalRecords] = useState([]);
   const [allTimeStats, setAllTimeStats] = useState({ totalWorkouts: 0, totalVolume: 0 });
 
+  const [bodyMetrics, setBodyMetrics] = useState([]);
+  const [bodyMetricSaving, setBodyMetricSaving] = useState(false);
+  const [nutritionDate, setNutritionDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [nutritionLogs, setNutritionLogs] = useState([]);
+  const [nutritionSaving, setNutritionSaving] = useState(false);
+
   const [tab, setTab] = useState("home");
   const [activeWorkout, setActiveWorkout] = useState(null);
   const [elapsedSec, setElapsedSec] = useState(0);
   const [restSeconds, setRestSeconds] = useState(null);
   const [summary, setSummary] = useState(null);
   const [finishing, setFinishing] = useState(false);
+
+  const [hrConnection, setHrConnection] = useState(null); // { deviceName, disconnect }
+  const [hrCurrent, setHrCurrent] = useState(null);
+  const [hrReadings, setHrReadings] = useState([]);
+  const [hrError, setHrError] = useState(null);
+  const [hrConnecting, setHrConnecting] = useState(false);
 
   const startTimeRef = useRef(null);
 
@@ -512,7 +534,7 @@ export default function App() {
         await seedDefaultRoutines();
         r = await listRoutines();
       }
-      const [recentW, weekStats, streakVal, trend, prs, prof, allTime, exerciseList] = await Promise.all([
+      const [recentW, weekStats, streakVal, trend, prs, prof, allTime, exerciseList, metrics, todayNutrition] = await Promise.all([
         listRecentWorkouts(5),
         getThisWeekStats(),
         getStreak(),
@@ -521,6 +543,8 @@ export default function App() {
         getProfile(),
         getAllTimeStats(),
         listExercises(),
+        listBodyMetrics(60),
+        listNutritionLogs(new Date().toISOString().slice(0, 10)),
       ]);
       setRoutines(r);
       setRecent(recentW);
@@ -532,6 +556,8 @@ export default function App() {
       setProfile(prof);
       setAllTimeStats(allTime);
       setExercises(exerciseList);
+      setBodyMetrics(metrics);
+      setNutritionLogs(todayNutrition);
     } catch (e) {
       setErrorMsg(e.message || "資料載入失敗,請檢查網路連線");
     } finally {
@@ -547,6 +573,117 @@ export default function App() {
       setErrorMsg(e.message || "課表載入失敗");
     }
   }, []);
+
+  const refreshBodyMetrics = useCallback(async () => {
+    try {
+      setBodyMetrics(await listBodyMetrics(60));
+    } catch (e) {
+      setErrorMsg(e.message || "體態紀錄載入失敗");
+    }
+  }, []);
+
+  const refreshNutrition = useCallback(async (date) => {
+    try {
+      setNutritionLogs(await listNutritionLogs(date));
+    } catch (e) {
+      setErrorMsg(e.message || "營養紀錄載入失敗");
+    }
+  }, []);
+
+  const handleChangeNutritionDate = (date) => {
+    setNutritionDate(date);
+    refreshNutrition(date);
+  };
+
+  const handleSaveBodyMetric = async ({ weight, bodyFat, note, photoFile }) => {
+    setBodyMetricSaving(true);
+    setErrorMsg(null);
+    try {
+      const recordedAt = new Date().toISOString().slice(0, 10);
+      let photoPath;
+      if (photoFile) photoPath = await uploadBodyPhoto(photoFile, recordedAt);
+      await upsertBodyMetric({
+        recordedAt,
+        weightKg: weight ? Number(weight) : null,
+        bodyFatPct: bodyFat ? Number(bodyFat) : null,
+        note,
+        photoPath,
+      });
+      await refreshBodyMetrics();
+      return true;
+    } catch (e) {
+      setErrorMsg(e.message || "儲存體態紀錄失敗");
+      return false;
+    } finally {
+      setBodyMetricSaving(false);
+    }
+  };
+
+  const handleDeleteBodyMetric = async (id) => {
+    if (!window.confirm("確定要刪除這筆體態紀錄嗎？照片也會一併移除。")) return;
+    setErrorMsg(null);
+    try {
+      await deleteBodyMetric(id);
+      await refreshBodyMetrics();
+    } catch (e) {
+      setErrorMsg(e.message || "刪除失敗,請再試一次");
+    }
+  };
+
+  const handleAddNutrition = async ({ meal, calories, protein, carbs, fat }) => {
+    setNutritionSaving(true);
+    setErrorMsg(null);
+    try {
+      await addNutritionEntry({
+        loggedAt: nutritionDate,
+        meal,
+        calories: calories ? Number(calories) : 0,
+        proteinG: protein ? Number(protein) : 0,
+        carbsG: carbs ? Number(carbs) : 0,
+        fatG: fat ? Number(fat) : 0,
+      });
+      await refreshNutrition(nutritionDate);
+      return true;
+    } catch (e) {
+      setErrorMsg(e.message || "新增飲食紀錄失敗");
+      return false;
+    } finally {
+      setNutritionSaving(false);
+    }
+  };
+
+  const handleDeleteNutrition = async (id) => {
+    setErrorMsg(null);
+    try {
+      await deleteNutritionEntry(id);
+      await refreshNutrition(nutritionDate);
+    } catch (e) {
+      setErrorMsg(e.message || "刪除失敗,請再試一次");
+    }
+  };
+
+  const handleConnectHeartRate = async () => {
+    setHrError(null);
+    setHrConnecting(true);
+    try {
+      const conn = await connectHeartRateMonitor((bpm) => {
+        setHrCurrent(bpm);
+        setHrReadings((r) => [...r, bpm]);
+      });
+      setHrConnection(conn);
+    } catch (e) {
+      if (e.name !== "NotFoundError") setHrError(e.message || "連接心率裝置失敗");
+    } finally {
+      setHrConnecting(false);
+    }
+  };
+
+  const disconnectHeartRate = useCallback(() => {
+    if (hrConnection) hrConnection.disconnect();
+    setHrConnection(null);
+    setHrCurrent(null);
+    setHrReadings([]);
+  }, [hrConnection]);
 
   useEffect(() => {
     if (session) loadAllData();
@@ -704,9 +841,13 @@ export default function App() {
     setFinishing(true);
     setErrorMsg(null);
     try {
-      await finishWorkoutApi({ workoutId: activeWorkout.workoutId, durationSeconds: elapsedSec });
-      setSummary({ duration: `${mins} 分鐘`, volume, sets, prCount });
+      const heartRate = hrReadings.length
+        ? { avg: Math.round(hrReadings.reduce((a, b) => a + b, 0) / hrReadings.length), max: Math.max(...hrReadings) }
+        : null;
+      await finishWorkoutApi({ workoutId: activeWorkout.workoutId, durationSeconds: elapsedSec, heartRate });
+      setSummary({ duration: `${mins} 分鐘`, volume, sets, prCount, heartRate });
       setRestSeconds(null);
+      disconnectHeartRate();
     } catch (e) {
       setErrorMsg(e.message || "訓練儲存失敗,請檢查網路連線後再試一次");
     } finally {
@@ -746,12 +887,19 @@ export default function App() {
               onUpdateSet={updateSet}
               onToggleSet={toggleSet}
               onFinish={finishWorkout}
-              onCancel={() => setActiveWorkout(null)}
+              onCancel={() => { disconnectHeartRate(); setActiveWorkout(null); }}
               elapsedSec={elapsedSec}
               restSeconds={restSeconds}
               onSkipRest={() => setRestSeconds(null)}
               onAddRest={() => setRestSeconds((s) => (s || 0) + 15)}
               finishing={finishing}
+              hrSupported={isBluetoothSupported()}
+              hrConnection={hrConnection}
+              hrCurrent={hrCurrent}
+              hrConnecting={hrConnecting}
+              hrError={hrError}
+              onConnectHeartRate={handleConnectHeartRate}
+              onDisconnectHeartRate={disconnectHeartRate}
             />
           ) : (
             <div className="h-full overflow-y-auto">
@@ -770,7 +918,23 @@ export default function App() {
                   onDeleteRoutine={handleDeleteRoutine}
                 />
               )}
-              {tab === "progress" && <ProgressScreen volumeTrend={volumeTrend} personalRecords={personalRecords} weekVolume={weekVolume} />}
+              {tab === "progress" && (
+                <ProgressPanels
+                  volumeTrend={volumeTrend}
+                  personalRecords={personalRecords}
+                  weekVolume={weekVolume}
+                  bodyMetrics={bodyMetrics}
+                  onSaveBodyMetric={handleSaveBodyMetric}
+                  onDeleteBodyMetric={handleDeleteBodyMetric}
+                  bodyMetricSaving={bodyMetricSaving}
+                  nutritionDate={nutritionDate}
+                  onChangeNutritionDate={handleChangeNutritionDate}
+                  nutritionLogs={nutritionLogs}
+                  onAddNutrition={handleAddNutrition}
+                  onDeleteNutrition={handleDeleteNutrition}
+                  nutritionSaving={nutritionSaving}
+                />
+              )}
               {tab === "me" && <MeScreen profile={profile} allTimeStats={allTimeStats} onSignOut={handleSignOut} />}
             </div>
           )}

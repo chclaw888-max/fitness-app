@@ -114,6 +114,8 @@ create table public.workouts (
   total_volume numeric not null default 0,
   total_sets int not null default 0,
   pr_count int not null default 0,
+  avg_heart_rate int,
+  max_heart_rate int,
   created_at timestamptz not null default now()
 );
 
@@ -147,10 +149,44 @@ create table public.body_metrics (
   recorded_at date not null default current_date,
   weight_kg numeric,
   body_fat_pct numeric,
+  photo_path text,
   note text,
   created_at timestamptz not null default now(),
   unique (user_id, recorded_at)
 );
+
+-- =============================================================
+-- 7b. nutrition_logs — 飲食紀錄
+-- =============================================================
+create table public.nutrition_logs (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  logged_at date not null default current_date,
+  meal text not null,
+  calories numeric not null default 0,
+  protein_g numeric not null default 0,
+  carbs_g numeric not null default 0,
+  fat_g numeric not null default 0,
+  note text,
+  created_at timestamptz not null default now()
+);
+
+create index nutrition_logs_user_date_idx on public.nutrition_logs (user_id, logged_at desc);
+
+-- =============================================================
+-- 7c. Storage — 體態照片私有儲存桶
+-- =============================================================
+insert into storage.buckets (id, name, public)
+values ('body-photos', 'body-photos', false)
+on conflict (id) do nothing;
+
+-- 檔案路徑規則：{user_id}/{filename}，用資料夾第一層判斷擁有者
+create policy "body_photos_select_own" on storage.objects
+  for select using (bucket_id = 'body-photos' and (storage.foldername(name))[1] = auth.uid()::text);
+create policy "body_photos_insert_own" on storage.objects
+  for insert with check (bucket_id = 'body-photos' and (storage.foldername(name))[1] = auth.uid()::text);
+create policy "body_photos_delete_own" on storage.objects
+  for delete using (bucket_id = 'body-photos' and (storage.foldername(name))[1] = auth.uid()::text);
 
 -- =============================================================
 -- 輔助視圖:個人紀錄 / 每週訓練量
@@ -188,6 +224,7 @@ alter table public.routine_exercises enable row level security;
 alter table public.workouts enable row level security;
 alter table public.workout_sets enable row level security;
 alter table public.body_metrics enable row level security;
+alter table public.nutrition_logs enable row level security;
 
 -- profiles：只能看/改自己的
 create policy "profiles_select_own" on public.profiles
@@ -232,4 +269,8 @@ create policy "workout_sets_all_own" on public.workout_sets
 
 -- body_metrics：僅本人可存取
 create policy "body_metrics_all_own" on public.body_metrics
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- nutrition_logs：僅本人可存取
+create policy "nutrition_logs_all_own" on public.nutrition_logs
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
