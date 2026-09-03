@@ -54,11 +54,9 @@ function LineChart({ points: rawPoints, color = COLORS.accent }) {
       <path d={pathD} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
       {points.map((p, i) => (
         <circle key={i} cx={p.x} cy={p.y} r={i === points.length - 1 ? 4 : 2.5} fill={i === points.length - 1 ? COLORS.lime : color}>
-          {p.label ? (
-            <title>{p.label}: {p.value}</title>
-          ) : (
-            <title>{p.value}</title>
-          )}
+          <title>
+            {p.label ? `${p.label}: ` : ''}${p.formatted ?? p.value}
+          </title>
         </circle>
       ))}
     </svg>
@@ -903,7 +901,12 @@ function BodyMetricsPanel({ bodyMetrics, onSave, onDelete, saving }) {
   // Chart data for range (ascending date)
   const chartData = rangeMetrics
     .filter((m) => m[chartMetric] != null)
-    .sort((a, b) => new Date(a.recorded_at) - new Date(b.recorded_at));
+    .sort((a, b) => new Date(a.recorded_at) - new Date(b.recorded_at))
+    .map(m => ({
+      value: Number(m[chartMetric]),
+      label: `${new Date(m.recorded_at).getMonth() + 1}/${new Date(m.recorded_at).getDate()}`,
+      formatted: `${Number(m[chartMetric])}${METRICS[chartMetric].unit}`
+    }));
 
   const activeMeta = METRICS[chartMetric];
 
