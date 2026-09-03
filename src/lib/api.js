@@ -642,8 +642,12 @@ export async function getExerciseVolumeTrend(exerciseId, weeks = 4) {
 
   const weekMap = new Map();
   for (const row of data) {
-    const date = new Date(row.workouts!.inner?.finished_at);
+    const workout = row.workouts?.inner;
+    if (!workout || !workout.finished_at) continue;
+
+    const date = new Date(workout.finished_at);
     if (isNaN(date.getTime())) continue;
+
     const weekStart = new Date(date);
     weekStart.setDate(date.getDate() - date.getDay()); // Start of week (Sunday)
     const weekKey = weekStart.toISOString().split('T')[0];

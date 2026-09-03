@@ -325,7 +325,7 @@ function TrainingPanel({ volumeTrend, personalRecords, weekVolume, streak, weekW
             </div>
           </div>
         </div>
-      ))
+      )}
 
 
       {/* Stats Cards */}
@@ -989,7 +989,7 @@ function BodyMetricsPanel({ bodyMetrics, onSave, onDelete, saving }) {
                 key={key}
                 onClick={() => setChartMetric(key)}
                 className="text-left rounded-xl p-2.5"
-                style={{ background: active ? COLORS.accentSoft : "transparent", border: `1px solid ${active ? COLORS.accent : "transparent`}} }}
+                style={{ background: active ? COLORS.accentSoft : "transparent", border: `1px solid ${active ? COLORS.accent : "transparent"}` }}
               >
                 <div className="text-xs" style={{ ...body, color: COLORS.textDim }}>{meta.label}</div>
                 <div className="text-xl" style={{ ...display, color: COLORS.text, fontWeight: 700 }}>
