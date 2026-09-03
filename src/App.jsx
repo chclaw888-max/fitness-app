@@ -623,11 +623,11 @@ export default function App() {
     refreshNutrition(date);
   };
 
-  const handleSaveBodyMetric = async ({ weight, bodyFat, muscleMass, visceralFat, note, photoFile }) => {
+  const handleSaveBodyMetric = async ({ weight, bodyFat, muscleMass, visceralFat, note, photoFile, date }) => {
     setBodyMetricSaving(true);
     setErrorMsg(null);
     try {
-      const recordedAt = new Date().toISOString().slice(0, 10);
+      const recordedAt = date || new Date().toISOString().slice(0, 10);
       let photoPath;
       if (photoFile) photoPath = await uploadBodyPhoto(photoFile, recordedAt);
       await upsertBodyMetric({
@@ -978,6 +978,7 @@ export default function App() {
                   nutritionLogs={nutritionLogs}
                   onAddNutrition={handleAddNutrition}
                   onDeleteNutrition={handleDeleteNutrition}
+                  onUpdateNutrition={updateNutritionEntry}
                   nutritionSaving={nutritionSaving}
                 />
               )}

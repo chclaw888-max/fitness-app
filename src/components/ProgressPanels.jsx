@@ -1,8 +1,13 @@
 import { useState, useEffect, useCallback } from "react";
-import { Trophy, Plus, X, Camera, Loader2, Share2, Trash2, Image as ImageIcon, Utensils } from "lucide-react";
+import { Trophy, Plus, X, Camera, Loader2, Share2, Trash2, Image as ImageIcon, Utensils, Edit } from "lucide-react";
 import { COLORS, display, body } from "../theme";
 import { shareCard } from "../lib/share";
-import { getBodyPhotoUrl, uploadBodyPhoto } from "../lib/api";
+import {
+  getBodyPhotoUrl, uploadBodyPhoto,
+  listWorkoutsByDateRange, getWorkoutById, updateWorkout, deleteWorkout,
+  getBodyMetricsByDate,
+  updateNutritionEntry
+} from "../lib/api";
 
 const inputStyle = {
   background: COLORS.surfaceElevated,
@@ -77,84 +82,446 @@ function SegmentedControl({ value, onChange, options }) {
 
 /* ----------------------------- 訓練趨勢 / PR ----------------------------- */
 
-function TrainingPanel({ volumeTrend, personalRecords, weekVolume }) {
-  const [sharing, setSharing] = useState(false);
+function TrainingPanel({}) {
+  const [dateRange, setDateRange] = useState({ start: "", end: "" });
+  const [workouts, setWorkouts] = useState([]);
+  [volumeTrend, setVolumeTrend] = useState([]);
+  [personalRecords, setPersonalRecords] = useState([]);
+  [weekVolume, setWeekVolume] = useState(0);
+  [weekWorkouts, setWeekWorkouts] = useState(0);
+  [streak, setStreak] = useState(0);
+  [loading, setLoading] = useState(false);
+  [selectedWorkout, setSelectedWorkout] = useState(null);
+  [workoutForm, setWorkoutForm] = useState(false);
+  [formData, setFormData] = useState({
+    routineName: "",
+    durationSeconds: 0,
+    totalVolume: 0,
+    totalSets: 0,
+    prCount: 0,
+    avgHeartRate: null,
+    maxHeartRate: null
+  });
+  [formLoading, setFormLoading] = useState(false);
 
-  const handleShare = async () => {
-    setSharing(true);
+  useEffect(() => {
+    loadInitialData();
+  }, []);
+
+  const loadInitialData = async () => {
+    setLoading(true);
     try {
-      const topPR = personalRecords[0];
-      await shareCard({
-        title: "本週訓練戰績",
-        subtitle: new Date().toLocaleDateString("zh-TW", { month: "long", day: "numeric" }),
-        stats: [
-          { label: "本週訓練量 (kg)", value: Math.round(weekVolume).toLocaleString() },
-          { label: "個人紀錄總數", value: String(personalRecords.length) },
-          ...(topPR ? [{ label: `最新紀錄：${topPR.exercise_name}`, value: `${topPR.weight} kg`, accent: true }] : []),
-        ],
-        textFallback: `本週訓練量 ${Math.round(weekVolume).toLocaleString()} kg`,
-        filename: "weekly-progress.png",
-      });
+      const [trend, records, weekStats, streakValue] = await Promise.all([
+        getVolumeTrend(7),
+        getPersonalRecords(10),
+        getThisWeekStats(),
+        getStreak()
+      ]);
+      setVolumeTrend(trend);
+      setPersonalRecords(records);
+      setWeekVolume(weekStats.weekVolume);
+      setWeekWorkouts(weekStats.weekWorkouts);
+      setStreak(streakValue);
     } catch (e) {
-      // 使用者取消分享或裝置不支援，靜默即可
+      console.error("Failed to load initial data:", e);
     } finally {
-      setSharing(false);
+      setLoading(false);
     }
+  };
+
+  const loadWorkoutsByDate = async () => {
+    if (!dateRange.start || !dateRange.end) return;
+    setLoading(true);
+    try {
+      const data = await listWorkoutsByDateRange(dateRange.start, dateRange.end);
+      setWorkouts(data);
+    } catch (e) {
+      console.error("Failed to load workouts:", e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDateChange = (range) => {
+    setDateRange(range);
+    if (range.start && range.end) {
+      loadWorkoutsByDate();
+    } else {
+      setWorkouts([]);
+    }
+  };
+
+  const handleSelectWorkout = async (workoutId) => {
+    try {
+      const workout = await getWorkoutById(workoutId);
+      setSelectedWorkout(workout);
+      setFormData({
+        routineName: workout.routine_name || "",
+        durationSeconds: workout.duration_seconds || 0,
+        totalVolume: Number(workout.total_volume) || 0,
+        totalSets: workout.total_sets || 0,
+        prCount: workout.pr_count || 0,
+        avgHeartRate: workout.avg_heart_rate,
+        maxHeartRate: workout.max_heart_rate
+      });
+      setWorkoutForm(true);
+    } catch (e) {
+      console.error("Failed to load workout:", e);
+    }
+  };
+
+  const handleUpdateWorkout = async () => {
+    if (!selectedWorkout) return;
+    setFormLoading(true);
+    try {
+      await updateWorkout(selectedWorkout.id, formData);
+      await loadWorkoutsByDate(); // Refresh list
+      setWorkoutForm(false);
+    } catch (e) {
+      console.error("Failed to update workout:", e);
+    } finally {
+      setFormLoading(false);
+    }
+  };
+
+  const handleDeleteWorkout = async (workoutId) => {
+    if (!window.confirm("確定要刪除這筆訓練紀錄嗎？此操作無法復原。")) return;
+    try {
+      await deleteWorkout(workoutId);
+      await loadWorkoutsByDate(); // Refresh list
+    } catch (e) {
+      console.error("Failed to delete workout:", e);
+    }
+  };
+
+  const handleCreateWorkout = async () => {
+    setWorkoutForm(true);
+    setSelectedWorkout(null);
+    setFormData({
+      routineName: "",
+      durationSeconds: 0,
+      totalVolume: 0,
+      totalSets: 0,
+      prCount: 0,
+      avgHeartRate: null,
+      maxHeartRate: null
+    });
+  };
+
+  const handleSaveWorkout = async () => {
+    if (selectedWorkout) {
+      await handleUpdateWorkout();
+    } else {
+      // For creating new workout, we'd need to use createBackfilledWorkout
+      // This requires more parameters (routineId, exercises, etc.)
+      // For simplicity, we'll focus on update/delete for now
+      alert("新增訓練功能請使用「訓練」頁面的補填訓練功能");
+      setWorkoutForm(false);
+    }
+  };
+
+  const formatDateInput = (dateStr) => {
+    if (!dateStr) return "";
+    return dateStr; // Already in YYYY-MM-DD format from API
   };
 
   return (
     <div>
-      <div className="rounded-2xl p-4 mb-3" style={{ background: COLORS.surface, border: `1px solid ${COLORS.borderSoft}` }}>
-        <div className="flex items-start justify-between mb-2">
-          <div>
+      {/* Date Range Picker */}
+      <div className="mb-4">
+        <div className="flex items-center gap-3">
+          <div className="flex-1">
+            <label className="text-xs mb-1 block" style={{ ...body, color: COLORS.textDim }}>開始日期</label>
+            <input
+              type="date"
+              value={dateRange.start}
+              onChange={(e) => {
+                const start = e.target.value;
+                setDateRange(prev => ({ ...prev, start }));
+                if (start && dateRange.end) {
+                  loadWorkoutsByDate();
+                }
+              }}
+              className="w-full rounded-xl px-3 py-2 text-sm"
+              style={inputStyle}
+            />
+          </div>
+          <div className="flex-1">
+            <label className="text-xs mb-1 block" style={{ ...body, color: COLORS.textDim }}>結束日期</label>
+            <input
+              type="date"
+              value={dateRange.end}
+              onChange={(e) => {
+                const end = e.target.value;
+                setDateRange(prev => ({ ...prev, end }));
+                if (dateRange.start && end) {
+                  loadWorkoutsByDate();
+                }
+              }}
+              className="w-full rounded-xl px-3 py-2 text-sm"
+              style={inputStyle}
+            />
+          </div>
+          <button
+            onClick={() => {
+              // Quick presets
+              const end = new Date().toISOString().split('T')[0];
+              const start = new Date();
+              start.setDate(start.getDate() - 30); // Last 30 days
+              const startStr = start.toISOString().split('T')[0];
+              setDateRange({ start: startStr, end: end });
+              loadWorkoutsByDate();
+            }}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm"
+            style={{ background: COLORS.accentSoft, color: COLORS.accent, ...body, fontWeight: 600 }}
+          >
+            最近30天
+          </button>
+        </div>
+      </div>
+
+      {/* Stats Cards */}
+      {!loading && (
+        <div className="flex gap-3 mb-5">
+          <div className="flex-1 rounded-2xl p-4" style={{ background: COLORS.surface, border: `1px solid ${COLORS.borderSoft}` }}>
+            <div className="text-xs" style={{ ...body, color: COLORS.textDim }}>連續訓練天數</div>
+            <div className="text-2xl" style={{ ...display, color: COLORS.text, fontWeight: 700 }}>{streak} 天</div>
+          </div>
+          <div className="flex-1 rounded-2xl p-4" style={{ background: COLORS.surface, border: `1px solid ${COLORS.borderSoft}` }}>
             <div className="text-xs" style={{ ...body, color: COLORS.textDim }}>本週訓練量</div>
             <div className="text-2xl" style={{ ...display, color: COLORS.text, fontWeight: 700 }}>{Math.round(weekVolume).toLocaleString()} kg</div>
           </div>
-          <button
-            onClick={handleShare}
-            disabled={sharing}
-            className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg shrink-0"
-            style={{ background: COLORS.accentSoft, color: COLORS.accent, ...body, fontWeight: 600 }}
-          >
-            {sharing ? <Loader2 size={13} className="animate-spin" /> : <Share2 size={13} />}
-            分享
-          </button>
+          <div className="flex-1 rounded-2xl p-4" style={{ background: COLORS.surface, border: `1px solid ${COLORS.borderSoft}` }}>
+            <div className="text-xs" style={{ ...body, color: COLORS.textDim }}>本週次數</div>
+            <div className="text-2xl" style={{ ...display, color: COLORS.text, fontWeight: 700 }}>{weekWorkouts} / 5</div>
+          </div>
         </div>
-        {volumeTrend.length > 0 ? (
-          <>
-            <LineChart points={volumeTrend.map((d) => ({ value: Number(d.volume) }))} />
-            <div className="flex justify-between mt-1">
-              {volumeTrend.map((d, i) => (
-                <span key={i} className="text-xs" style={{ ...body, color: COLORS.textFaint }}>
-                  {new Date(d.week_start).getMonth() + 1}/{new Date(d.week_start).getDate()}
-                </span>
+      )}
+
+      {/* Volume Trend Chart */}
+      {!loading && volumeTrend.length > 0 && (
+        <div className="rounded-2xl p-4 mb-4" style={{ background: COLORS.surface, border: `1px solid ${COLORS.borderSoft}` }}>
+          <div className="text-xs mb-2" style={{ ...body, color: COLORS.textDim }}>訓練量趨勢 (近 7 週)</div>
+          <LineChart points={volumeTrend.map((d) => ({ value: Number(d.volume) }))} />
+          <div className="flex justify-between mt-1">
+            {volumeTrend.map((d, i) => (
+              <span key={i} className="text-xs" style={{ ...body, color: COLORS.textFaint }}>
+                {new Date(d.week_start).getMonth() + 1}/{new Date(d.week_start).getDate()}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Personal Records */}
+      {!loading && (
+        <div className="mb-4">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-sm" style={{ ...body, color: COLORS.textDim, fontWeight: 600 }}>個人紀錄 (前 10 名)</div>
+            <button
+              onClick={() => setDateRange({ start: "", end: "" })}
+              className="text-xs px-3 py-1 rounded-lg"
+              style={{ background: COLORS.surfaceElevated, color: COLORS.text, ...body }}
+            >
+              重設
+            </button>
+          </div>
+          {personalRecords.length === 0 ? (
+            <div className="text-sm text-center py-6" style={{ ...body, color: COLORS.textFaint }}>還沒有個人紀錄</div>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {personalRecords.map((p, i) => (
+                <div key={i} className="rounded-2xl p-4 flex items-center justify-between" style={{ background: COLORS.surface, border: `1px solid ${COLORS.borderSoft}` }}>
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: COLORS.limeSoft }}>
+                      <Trophy size={16} color={COLORS.lime} />
+                    </div>
+                    <div>
+                      <div style={{ ...body, color: COLORS.text, fontWeight: 600 }}>{p.exercise_name}</div>
+                      <div className="text-xs" style={{ ...body, color: COLORS.textFaint }}>{fmtDate(p.completed_at)}</div>
+                    </div>
+                  </div>
+                  <div style={{ ...display, color: COLORS.text, fontWeight: 700 }}>{p.weight} kg</div>
+                </div>
               ))}
             </div>
-          </>
-        ) : (
-          <div className="text-sm text-center py-4" style={{ ...body, color: COLORS.textFaint }}>累積更多訓練後這裡會顯示趨勢圖</div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
-      <div className="text-sm mb-3" style={{ ...body, color: COLORS.textDim, fontWeight: 600 }}>個人紀錄</div>
-      {personalRecords.length === 0 ? (
-        <div className="text-sm text-center py-6" style={{ ...body, color: COLORS.textFaint }}>還沒有個人紀錄</div>
-      ) : (
-        <div className="flex flex-col gap-3">
-          {personalRecords.map((p, i) => (
-            <div key={i} className="rounded-2xl p-4 flex items-center justify-between" style={{ background: COLORS.surface, border: `1px solid ${COLORS.borderSoft}` }}>
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: COLORS.limeSoft }}>
-                  <Trophy size={16} color={COLORS.lime} />
+      {/* Workouts List */}
+      {!loading && (
+        <div className="mb-4">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <div className="text-sm" style={{ ...body, color: COLORS.textDim, fontWeight: 600 }}>訓練紀錄</div>
+              {dateRange.start && dateRange.end && (
+                <div className="text-xs" style={{ ...body, color: COLORS.textFaint }}>
+                  {new Date(dateRange.start).getMonth() + 1}/{new Date(dateRange.start).getDate()} ～
+                  {new Date(dateRange.end).getMonth() + 1}/{new Date(dateRange.end).getDate()}
                 </div>
-                <div>
-                  <div style={{ ...body, color: COLORS.text, fontWeight: 600 }}>{p.exercise_name}</div>
-                  <div className="text-xs" style={{ ...body, color: COLORS.textFaint }}>{fmtDate(p.completed_at)}</div>
-                </div>
-              </div>
-              <div style={{ ...display, color: COLORS.text, fontWeight: 700 }}>{p.weight} kg</div>
+              )}
             </div>
-          ))}
+            <button
+              onClick={handleCreateWorkout}
+              disabled={loading}
+              className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg"
+              style={{ background: COLORS.accentSoft, color: COLORS.accent, ...body, fontWeight: 600 }}
+            >
+              {loading ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+              新增紀錄
+            </button>
+          </div>
+          {workouts.length === 0 ? (
+            <div className="text-sm text-center py-6" style={{ ...body, color: COLORS.textFaint }}>
+              {dateRange.start && dateRange.end ?
+                "此期間內沒有訓練紀錄" :
+                "選擇日期範圍以查看訓練紀錄"}
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {workouts.map((w) => (
+                <div key={w.id} className="rounded-2xl p-4 flex items-center justify-between cursor-pointer hover:bg-[COLORS.surfaceElevated]/50" onClick={() => handleSelectWorkout(w.id)}>
+                  <div className="flex-1">
+                    <div style={{ ...body, color: COLORS.text, fontWeight: 600 }}>{w.routine_name || "未命名課表"}</div>
+                    <div className="text-xs mt-1 flex items-center gap-2" style={{ ...body, color: COLORS.textFaint }}>
+                      <span>{fmtDate(w.finished_at)}</span>
+                      <span>·</span>
+                      <span>{Math.round(w.duration_seconds / 60)} 分鐘</span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div style={{ ...display, color: COLORS.text, fontWeight: 700 }}>{Math.round(w.total_volume).toLocaleString()}</div>
+                    <div className="text-xs" style={{ ...body, color: COLORS.textFaint }}>kg 總量</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Workout Form (Edit/Create) */}
+      {workoutForm && (
+        <div className="rounded-2xl p-4" style={{ background: COLORS.surface, border: `1px solid ${COLORS.borderSoft}` }}>
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-xl" style={{ ...display, color: COLORS.text, fontWeight: 700 }}>
+              {selectedWorkout ? "編輯訓練" : "新增訓練"}
+            </div>
+            <button
+              onClick={() => setWorkoutForm(false)}
+              className="text-xs"
+              style={{ color: COLORS.textDim }}
+            >
+              <X size={18} />
+            </button>
+          </div>
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            <div>
+              <label className="text-xs mb-1 block" style={{ ...body, color: COLORS.textDim }}>課表名稱</label>
+              <input
+                value={formData.routineName}
+                onChange={(e) => setFormData(prev => ({ ...prev, routineName: e.target.value }))}
+                placeholder="例如：推力訓練日"
+                className="w-full rounded-xl px-3 py-2.5 text-sm"
+                style={inputStyle}
+              />
+            </div>
+            <div>
+              <label className="text-xs mb-1 block" style={{ ...body, color: COLORS.textDim }}>訓練時長 (秒)</label>
+              <input
+                type="number"
+                value={formData.durationSeconds}
+                onChange={(e) => setFormData(prev => ({ ...prev, durationSeconds: Number(e.target.value) || 0 }))}
+                placeholder="1800"
+                className="w-full rounded-xl px-3 py-2.5 text-sm"
+                style={inputStyle}
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            <div>
+              <label className="text-xs mb-1 block" style={{ ...body, color: COLORS.textDim }}>總訓練量 (kg)</label>
+              <input
+                type="number"
+                value={formData.totalVolume}
+                onChange={(e) => setFormData(prev => ({ ...prev, totalVolume: Number(e.target.value) || 0 }))}
+                placeholder="5000"
+                className="w-full rounded-xl px-3 py-2.5 text-sm"
+                style={inputStyle}
+              />
+            </div>
+            <div>
+              <label className="text-xs mb-1 block" style={{ ...body, color: COLORS.textDim }}>總組數</label>
+              <input
+                type="number"
+                value={formData.totalSets}
+                onChange={(e) => setFormData(prev => ({ ...prev, totalSets: Number(e.target.value) || 0 }))}
+                placeholder="25"
+                className="w-full rounded-xl px-3 py-2.5 text-sm"
+                style={inputStyle}
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            <div>
+              <label className="text-xs mb-1 block" style={{ ...body, color: COLORS.textDim }}>PR 次數</label>
+              <input
+                type="number"
+                value={formData.prCount}
+                onChange={(e) => setFormData(prev => ({ ...prev, prCount: Number(e.target.value) || 0 }))}
+                placeholder="5"
+                className="w-full rounded-xl px-3 py-2.5 text-sm"
+                style={inputStyle}
+              />
+            </div>
+            <div className="flex-1">
+              <label className="text-xs mb-1 block" style={{ ...body, color: COLORS.textDim }}>平均心率 (bpm)</label>
+              <input
+                type="number"
+                value={formData.avgHeartRate || ""}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setFormData(prev => ({ ...prev, avgHeartRate: val === "" ? null : Number(val) }));
+                }}
+                placeholder="120"
+                className="w-full rounded-xl px-3 py-2.5 text-sm"
+                style={inputStyle}
+              />
+            </div>
+            <div className="flex-1">
+              <label className="text-xs mb-1 block" style={{ ...body, color: COLORS.textDim }}>最高心率 (bpm)</label>
+              <input
+                type="number"
+                value={formData.maxHeartRate || ""}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setFormData(prev => ({ ...prev, maxHeartRate: val === "" ? null : Number(val) }));
+                }}
+                placeholder="160"
+                className="w-full rounded-xl px-3 py-2.5 text-sm"
+                style={inputStyle}
+              />
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setWorkoutForm(false)}
+              className="flex-1 rounded-xl py-2.5 text-sm"
+              style={{ background: COLORS.surfaceElevated, color: COLORS.textDim, ...body }}
+            >
+              取消
+            </button>
+            <button
+              onClick={handleSaveWorkout}
+              disabled={formLoading}
+              className="flex-1 rounded-xl py-2.5 text-sm flex items-center justify-center gap-2"
+              style={{ background: COLORS.accent, color: "#fff", ...body, fontWeight: 600 }}
+            >
+              {formLoading && <Loader2 size={14} className="animate-spin" />}
+              {formLoading ? "儲存中…" : (selectedWorkout ? "更新紀錄" : "新增紀錄")}
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -163,20 +530,51 @@ function TrainingPanel({ volumeTrend, personalRecords, weekVolume }) {
 
 /* ----------------------------- 體態 + 照片對比 ----------------------------- */
 
-function BodyMetricEntryForm({ onSave, onCancel, saving }) {
-  const [weight, setWeight] = useState("");
-  const [bodyFat, setBodyFat] = useState("");
-  const [muscleMass, setMuscleMass] = useState("");
-  const [visceralFat, setVisceralFat] = useState("");
-  const [note, setNote] = useState("");
+function BodyMetricEntryForm({
+  onSave,
+  onCancel,
+  saving,
+  initialData = null,
+  date = new Date().toISOString().split('T')[0]
+}) {
+  const [weight, setWeight] = useState(initialData?.weight_kg?.toString() || "");
+  const [bodyFat, setBodyFat] = useState(initialData?.body_fat_pct?.toString() || "");
+  const [muscleMass, setMuscleMass] = useState(initialData?.muscle_mass_kg?.toString() || "");
+  const [visceralFat, setVisceralFat] = useState(initialData?.visceral_fat_level?.toString() || "");
+  const [note, setNote] = useState(initialData?.note || "");
   const [photoFile, setPhotoFile] = useState(null);
-  const [photoPreview, setPhotoPreview] = useState(null);
+  const [photoPreview, setPhotoPreview] = useState(initialData?.photo_path ? null : "");
+  const [isEditing, setIsEditing] = useState(!!initialData);
+  const [metricId, setMetricId] = useState(initialData?.id || null);
 
   const handleFile = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setPhotoFile(file);
     setPhotoPreview(URL.createObjectURL(file));
+  };
+
+  const handleSave = async () => {
+    const data = {
+      weight: weight ? Number(weight) : null,
+      bodyFat: bodyFat ? Number(bodyFat) : null,
+      muscleMass: muscleMass ? Number(muscleMass) : null,
+      visceralFat: visceralFat ? Number(visceralFat) : null,
+      note,
+      photoFile
+    };
+    const ok = await onSave({
+      weight: data.weight,
+      bodyFat: data.bodyFat,
+      muscleMass: data.muscleMass,
+      visceralFat: data.visceralFat,
+      note: data.note,
+      photoFile: data.photoFile,
+      date: date
+    });
+    if (ok) {
+      onCancel();
+    }
   };
 
   return (
@@ -203,6 +601,17 @@ function BodyMetricEntryForm({ onSave, onCancel, saving }) {
         </div>
       </div>
 
+      <div className="flex items-center gap-2 mb-3">
+        <label className="text-xs mb-1.5 block" style={{ ...body, color: COLORS.textDim }}>日期</label>
+        <input
+          type="date"
+          value={date}
+          onChange={(e) => setDate(e.target.value)}
+          className="w-full rounded-xl px-3 py-2 text-sm"
+          style={inputStyle}
+        />
+      </div>
+
       <label className="text-xs mb-1.5 block" style={{ ...body, color: COLORS.textDim }}>照片(選填)</label>
       <label
         className="w-full rounded-xl mb-3 flex items-center justify-center gap-2 py-3 cursor-pointer"
@@ -224,13 +633,13 @@ function BodyMetricEntryForm({ onSave, onCancel, saving }) {
       <div className="flex gap-2">
         <button onClick={onCancel} className="flex-1 rounded-xl py-2.5 text-sm" style={{ background: COLORS.surfaceElevated, color: COLORS.textDim, ...body }}>取消</button>
         <button
-          onClick={() => onSave({ weight, bodyFat, muscleMass, visceralFat, note, photoFile })}
+          onClick={handleSave}
           disabled={saving}
           className="flex-1 rounded-xl py-2.5 text-sm flex items-center justify-center gap-2"
           style={{ background: COLORS.accent, color: "#fff", ...body, fontWeight: 600 }}
         >
           {saving && <Loader2 size={14} className="animate-spin" />}
-          {saving ? "儲存中…" : "儲存紀錄"}
+          {saving ? "儲存中…" : (isEditing ? "更新紀錄" : "新增紀錄")}
         </button>
       </div>
     </div>
@@ -329,9 +738,28 @@ function BodyMetricsPanel({ bodyMetrics, onSave, onDelete, saving }) {
   const [showForm, setShowForm] = useState(false);
   const [showCompare, setShowCompare] = useState(false);
   const [chartMetric, setChartMetric] = useState("weight_kg");
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [filteredMetrics, setFilteredMetrics] = useState([]);
+  const [editingMetric, setEditingMetric] = useState(null);
 
-  const withPhotos = bodyMetrics.filter((m) => m.photo_path);
-  const latest = bodyMetrics[0];
+  useEffect(() => {
+    if (selectedDate) {
+      loadMetricsForDate();
+    }
+  }, [selectedDate]);
+
+  const loadMetricsForDate = async () => {
+    try {
+      const metrics = await getBodyMetricsByDate(selectedDate);
+      setFilteredMetrics(metrics);
+    } catch (e) {
+      console.error("Failed to load body metrics for date:", e);
+      setFilteredMetrics([]);
+    }
+  };
+
+  const withPhotos = filteredMetrics.filter((m) => m.photo_path);
+  const latest = filteredMetrics[0];
 
   const METRICS = {
     weight_kg: { label: "體重", unit: "kg", color: COLORS.lime },
@@ -339,8 +767,31 @@ function BodyMetricsPanel({ bodyMetrics, onSave, onDelete, saving }) {
     muscle_mass_kg: { label: "肌肉量", unit: "kg", color: "#FF9F5C" },
     visceral_fat_level: { label: "內臟脂肪", unit: "", color: "#FF5D5D" },
   };
-  const chartData = [...bodyMetrics].filter((m) => m[chartMetric] != null).reverse();
+  const chartData = [...filteredMetrics].filter((m) => m[chartMetric] != null).reverse();
   const activeMeta = METRICS[chartMetric];
+
+  const handleSaveMetric = async (data) => {
+    const success = await onSave({
+      weight: data.weight,
+      bodyFat: data.bodyFat,
+      muscleMass: data.muscleMass,
+      visceralFat: data.visceralFat,
+      note: data.note,
+      photoFile: data.photoFile,
+      date: selectedDate
+    });
+
+    if (success) {
+      setShowForm(false);
+      setEditingMetric(null);
+      await loadMetricsForDate(); // Refresh
+    }
+  };
+
+  const handleEditMetric = (metric) => {
+    setEditingMetric(metric);
+    setShowForm(true);
+  };
 
   return (
     <div>
@@ -376,7 +827,7 @@ function BodyMetricsPanel({ bodyMetrics, onSave, onDelete, saving }) {
 
       <div className="flex gap-2 mb-4">
         <button
-          onClick={() => setShowForm((v) => !v)}
+          onClick={() => setShowForm(true)}
           className="flex-1 flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-sm"
           style={{ background: COLORS.accentSoft, color: COLORS.accent, ...body, fontWeight: 600 }}
         >
@@ -395,20 +846,36 @@ function BodyMetricsPanel({ bodyMetrics, onSave, onDelete, saving }) {
       {showForm && (
         <BodyMetricEntryForm
           saving={saving}
-          onCancel={() => setShowForm(false)}
-          onSave={async (data) => {
-            const ok = await onSave(data);
-            if (ok) setShowForm(false);
+          onCancel={() => {
+            setShowForm(false);
+            setEditingMetric(null);
           }}
+          onSave={handleSaveMetric}
+          initialData={editingMetric}
+          date={selectedDate}
         />
       )}
 
-      <div className="text-sm mb-3" style={{ ...body, color: COLORS.textDim, fontWeight: 600 }}>紀錄</div>
-      {bodyMetrics.length === 0 ? (
-        <div className="text-sm text-center py-6" style={{ ...body, color: COLORS.textFaint }}>還沒有體態紀錄</div>
+      <div className="flex items-center justify-between mb-3">
+        <div className="text-sm" style={{ ...body, color: COLORS.textDim, fontWeight: 600 }}>紀錄</div>
+        <input
+          type="date"
+          value={selectedDate}
+          onChange={(e) => setSelectedDate(e.target.value)}
+          className="rounded-xl px-3 py-2 text-sm"
+          style={inputStyle}
+        />
+      </div>
+
+      {filteredMetrics.length === 0 ? (
+        <div className="text-sm text-center py-6" style={{ ...body, color: COLORS.textFaint }}>
+          {selectedDate ?
+            `${new Date(selectedDate).getMonth() + 1}月${new Date(selectedDate).getDate()}日尚無體態紀錄` :
+            "選擇日期以查看體態紀錄"}
+        </div>
       ) : (
         <div className="flex flex-col gap-3">
-          {bodyMetrics.map((m) => (
+          {filteredMetrics.map((m) => (
             <div key={m.id} className="rounded-2xl p-3 flex items-center gap-3" style={{ background: COLORS.surface, border: `1px solid ${COLORS.borderSoft}` }}>
               <div className="w-12 h-12 rounded-xl overflow-hidden shrink-0" style={{ background: COLORS.surfaceElevated }}>
                 {m.photo_path ? <PhotoThumb path={m.photo_path} /> : <div className="w-full h-full flex items-center justify-center"><Camera size={14} color={COLORS.textFaint} /></div>}
@@ -424,21 +891,26 @@ function BodyMetricsPanel({ bodyMetrics, onSave, onDelete, saving }) {
                   ].filter(Boolean).join(" · ") || m.note || "—"}
                 </div>
               </div>
-              <button onClick={() => onDelete(m.id)} style={{ color: COLORS.textFaint }}><Trash2 size={15} /></button>
+              <div className="flex items-center gap-2">
+                <button onClick={() => handleEditMetric(m)} style={{ color: COLORS.accent, fontSize: "14px" }}><Edit size={16} /></button>
+                <button onClick={() => onDelete(m.id)} style={{ color: COLORS.textFaint }}><Trash2 size={15} /></button>
+              </div>
             </div>
           ))}
         </div>
       )}
 
-      {showCompare && <PhotoCompareSlider entries={bodyMetrics} onClose={() => setShowCompare(false)} />}
+      {showCompare && <PhotoCompareSlider entries={filteredMetrics} onClose={() => setShowCompare(false)} />}
     </div>
   );
 }
 
 /* ----------------------------- 營養追蹤 ----------------------------- */
 
-function NutritionPanel({ date, onChangeDate, logs, onAdd, onDelete, saving }) {
+function NutritionPanel({ date, onChangeDate, logs, onAdd, onDelete, onUpdate, saving }) {
   const [showForm, setShowForm] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [editingId, setEditingId] = useState(null);
   const [meal, setMeal] = useState("");
   const [calories, setCalories] = useState("");
   const [protein, setProtein] = useState("");
@@ -457,11 +929,32 @@ function NutritionPanel({ date, onChangeDate, logs, onAdd, onDelete, saving }) {
 
   const handleSubmit = async () => {
     if (!meal.trim()) return;
-    const ok = await onAdd({ meal: meal.trim(), calories, protein, carbs, fat });
-    if (ok) {
-      setMeal(""); setCalories(""); setProtein(""); setCarbs(""); setFat("");
-      setShowForm(false);
+    if (editMode && editingId) {
+      const ok = await onUpdate(editingId, { meal: meal.trim(), calories, protein, carbs, fat });
+      if (ok) {
+        setMeal(""); setCalories(""); setProtein(""); setCarbs(""); setFat("");
+        setShowForm(false);
+        setEditMode(false);
+        setEditingId(null);
+      }
+    } else {
+      const ok = await onAdd({ meal: meal.trim(), calories, protein, carbs, fat });
+      if (ok) {
+        setMeal(""); setCalories(""); setProtein(""); setCarbs(""); setFat("");
+        setShowForm(false);
+      }
     }
+  };
+
+  const handleEditClick = (log) => {
+    setEditMode(true);
+    setEditingId(log.id);
+    setMeal(log.meal);
+    setCalories(log.calories.toString());
+    setProtein(log.protein_g.toString());
+    setCarbs(log.carbs_g.toString());
+    setFat(log.fat_g.toString());
+    setShowForm(true);
   };
 
   return (
@@ -479,7 +972,8 @@ function NutritionPanel({ date, onChangeDate, logs, onAdd, onDelete, saving }) {
           className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg"
           style={{ background: COLORS.accentSoft, color: COLORS.accent, ...body, fontWeight: 600 }}
         >
-          <Plus size={15} /> 記錄飲食
+          {showForm && editMode ? <X size={15} /> : <Plus size={15} />}
+          {showForm && editMode ? "取消編輯" : "記錄飲食"}
         </button>
       </div>
 
@@ -513,7 +1007,7 @@ function NutritionPanel({ date, onChangeDate, logs, onAdd, onDelete, saving }) {
             style={{ background: COLORS.accent, color: "#fff", ...body, fontWeight: 600 }}
           >
             {saving && <Loader2 size={14} className="animate-spin" />}
-            {saving ? "儲存中…" : "新增"}
+            {saving ? "儲存中…" : (editMode ? "更新紀錄" : "新增")}
           </button>
         </div>
       )}
@@ -534,7 +1028,10 @@ function NutritionPanel({ date, onChangeDate, logs, onAdd, onDelete, saving }) {
                   {Math.round(l.calories)} kcal · 蛋白質 {Math.round(l.protein_g)}g
                 </div>
               </div>
-              <button onClick={() => onDelete(l.id)} style={{ color: COLORS.textFaint }}><Trash2 size={15} /></button>
+              <div className="flex items-center gap-2">
+                <button onClick={() => handleEditClick(l)} style={{ color: COLORS.accent, fontSize: "14px" }}><Edit size={16} /></button>
+                <button onClick={() => onDelete(l.id)} style={{ color: COLORS.textFaint }}><Trash2 size={15} /></button>
+              </div>
             </div>
           ))}
         </div>
@@ -569,7 +1066,7 @@ export default function ProgressPanels({
       />
 
       {tab === "training" && (
-        <TrainingPanel volumeTrend={volumeTrend} personalRecords={personalRecords} weekVolume={weekVolume} />
+        <TrainingPanel />
       )}
       {tab === "body" && (
         <BodyMetricsPanel bodyMetrics={bodyMetrics} onSave={onSaveBodyMetric} onDelete={onDeleteBodyMetric} saving={bodyMetricSaving} />

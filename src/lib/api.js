@@ -530,3 +530,87 @@ export async function deleteNutritionEntry(id) {
   const { error } = await supabase.from("nutrition_logs").delete().eq("id", id);
   if (error) throw error;
 }
+
+export async function updateNutritionEntry(id, { meal, calories, proteinG, carbsG, fatG, note }) {
+  const { data, error } = await supabase
+    .from("nutrition_logs")
+    .update({
+      meal,
+      calories: calories || 0,
+      protein_g: proteinG || 0,
+      carbs_g: carbsG || 0,
+      fat_g: fatG || 0,
+      note: note || null,
+    })
+    .eq("id", id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+/* =============================================================
+ * 工作表(workouts) - 額外功能
+ * ============================================================= */
+
+export async function listWorkoutsByDateRange(startDate, endDate) {
+  const { data, error } = await supabase
+    .from("workouts")
+    .select("id, routine_name, started_at, finished_at, duration_seconds, total_volume, total_sets, pr_count, avg_heart_rate, max_heart_rate")
+    .not("finished_at", "is", null)
+    .gte("finished_at", startDate)
+    .lte("finished_at", endDate)
+    .order("finished_at", { ascending: false });
+  if (error) throw error;
+  return data;
+}
+
+export async function getWorkoutById(workoutId) {
+  const { data, error } = await supabase
+    .from("workouts")
+    .select("id, routine_name, started_at, finished_at, duration_seconds, total_volume, total_sets, pr_count, avg_heart_rate, max_heart_rate")
+    .eq("id", workoutId)
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function updateWorkout(workoutId, { routineName, durationSeconds, totalVolume, totalSets, prCount, avgHeartRate, maxHeartRate }) {
+  const { data, error } = await supabase
+    .from("workouts")
+    .update({
+      routine_name: routineName,
+      duration_seconds: durationSeconds,
+      total_volume: totalVolume,
+      total_sets: totalSets,
+      pr_count: prCount,
+      avg_heart_rate: avgHeartRate,
+      max_heart_rate: maxHeartRate,
+    })
+    .eq("id", workoutId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteWorkout(workoutId) {
+  // First delete associated workout_sets due to foreign key constraint
+  const { error: setsError } = await supabase
+    .from("workout_sets")
+    .delete()
+    .eq("workout_id", workoutId);
+  if (setsError) throw setsError;
+
+  const { error } = await supabase.from("workouts").delete().eq("id", workoutId);
+  if (error) throw error;
+}
+
+export async function getBodyMetricsByDate(date) {
+  const { data, error } = await supabase
+    .from("body_metrics")
+    .select("id, recorded_at, weight_kg, body_fat_pct, muscle_mass_kg, visceral_fat_level, photo_path, note")
+    .eq("recorded_at", date);
+  if (error) throw error;
+  return data;
+}
