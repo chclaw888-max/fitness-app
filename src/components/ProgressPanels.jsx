@@ -1017,7 +1017,8 @@ function BodyMetricsPanel({ bodyMetrics, onSave, onDelete, saving }) {
           <>
             <LineChart points={chartData.map((m) => ({
               value: Number(m[chartMetric]),
-              label: `${new Date(m.recorded_at).getMonth() + 1}/${new Date(m.recorded_at).getDate()}`
+              label: `${new Date(m.recorded_at).getMonth() + 1}/${new Date(m.recorded_at).getDate()}`,
+              formatted: `${Number(m[chartMetric])}${METRICS[chartMetric].unit}`
             }))} color={activeMeta.color} />
             <div className="text-xs text-center mt-2" style={{ ...body, color: COLORS.textFaint }}>{activeMeta.label}趨勢(最近 {chartData.length} 筆紀錄)</div>
           </>
