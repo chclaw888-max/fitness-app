@@ -354,7 +354,7 @@ function TrainingPanel({ volumeTrend, personalRecords, weekVolume, streak, weekW
       {!loading && volumeTrend.length > 0 && (
         <div className="rounded-2xl p-4 mb-4" style={{ background: COLORS.surface, border: `1px solid ${COLORS.borderSoft}` }}>
           <div className="text-xs mb-2" style={{ ...body, color: COLORS.textDim }}>訓練量趨勢 (近 7 週)</div>
-          <LineChart points={volumeTrend.map((d) => ({ value: Number(d.volume), label: `${new Date(d.week_start).getMonth()+1}/${new Date(d.week_start).getDate()}`, formatted: `${Number(d.volume)}` }))} />
+          <LineChart points={volumeTrend.map((d) => ({ value: Number(d.volume), label: `${new Date(d.week_start).getMonth()+1}/${new Date(d.week_start).getDate()}`, formatted: `${Number(d.volume)} kg` }))} />
           <div className="flex justify-between mt-1">
             {volumeTrend.map((d, i) => (
               <span key={i} className="text-xs" style={{ ...body, color: COLORS.textFaint }}>
@@ -382,7 +382,7 @@ function TrainingPanel({ volumeTrend, personalRecords, weekVolume, streak, weekW
                 <div className="text-xs mb-2" style={{ ...body, color: COLORS.textDim }}>
                   {selectedExercise.name} 訓練量趨勢 (近 4 週)
                 </div>
-                <LineChart points={exerciseTrend.map((d) => ({ value: Number(d.volume), label: `${new Date(d.week_start).getMonth()+1}/${new Date(d.week_start).getDate()}`, formatted: `${Number(d.volume)}` }))} />
+                <LineChart points={exerciseTrend.map((d) => ({ value: Number(d.volume), label: `${new Date(d.week_start).getMonth()+1}/${new Date(d.week_start).getDate()}`, formatted: `${Number(d.volume)} kg` }))} />
                 <div className="flex justify-between mt-1">
                   {exerciseTrend.map((d, i) => (
                     <span key={i} className="text-xs" style={{ ...body, color: COLORS.textFaint }}>
