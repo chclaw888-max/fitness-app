@@ -621,7 +621,7 @@ function BodyMetricEntryForm({
   onCancel,
   saving,
   initialData = null,
-  date = new Date().toISOString().split('T')[0]
+  date: defaultDate = new Date().toISOString().split('T')[0]
 }) {
   const [weight, setWeight] = useState(initialData?.weight_kg?.toString() || "");
   const [bodyFat, setBodyFat] = useState(initialData?.body_fat_pct?.toString() || "");
@@ -632,6 +632,11 @@ function BodyMetricEntryForm({
   const [photoPreview, setPhotoPreview] = useState(initialData?.photo_path ? null : "");
   const [isEditing, setIsEditing] = useState(!!initialData);
   const [metricId, setMetricId] = useState(initialData?.id || null);
+  // Local state for the date in the form
+  const initialFormDate = initialData ?
+    (initialData.recorded_at ? initialData.recorded_at.split('T')[0] : '') :
+    defaultDate;
+  const [formDate, setFormDate] = useState(initialFormDate);
 
   const handleFile = (e) => {
     const file = e.target.files?.[0];
@@ -656,7 +661,7 @@ function BodyMetricEntryForm({
       visceralFat: data.visceralFat,
       note: data.note,
       photoFile: data.photoFile,
-      date: date
+      date: formDate
     });
     if (ok) {
       onCancel();
@@ -691,8 +696,8 @@ function BodyMetricEntryForm({
         <label className="text-xs mb-1.5 block" style={{ ...body, color: COLORS.textDim }}>日期</label>
         <input
           type="date"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
+          value={formDate}
+          onChange={(e) => setFormDate(e.target.value)}
           className="w-full rounded-xl px-3 py-2 text-sm"
           style={inputStyle}
         />
