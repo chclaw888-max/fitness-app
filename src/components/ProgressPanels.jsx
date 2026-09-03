@@ -53,7 +53,13 @@ function LineChart({ points: rawPoints, color = COLORS.accent }) {
       {points.length > 0 && <path d={areaD} fill={`url(#${gradId})`} />}
       <path d={pathD} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
       {points.map((p, i) => (
-        <circle key={i} cx={p.x} cy={p.y} r={i === points.length - 1 ? 4 : 2.5} fill={i === points.length - 1 ? COLORS.lime : color} />
+        <circle key={i} cx={p.x} cy={p.y} r={i === points.length - 1 ? 4 : 2.5} fill={i === points.length - 1 ? COLORS.lime : color}>
+          {p.label ? (
+            <title>{p.label}: {p.value}</title>
+          ) : (
+            <title>{p.value}</title>
+          )}
+        </circle>
       ))}
     </svg>
   );
@@ -1006,7 +1012,10 @@ function BodyMetricsPanel({ bodyMetrics, onSave, onDelete, saving }) {
         </div>
         {chartData.length > 1 ? (
           <>
-            <LineChart points={chartData.map((m) => ({ value: Number(m[chartMetric]) }))} color={activeMeta.color} />
+            <LineChart points={chartData.map((m) => ({
+              value: Number(m[chartMetric]),
+              label: `${new Date(m.recorded_at).getMonth() + 1}/${new Date(m.recorded_at).getDate()}`
+            }))} color={activeMeta.color} />
             <div className="text-xs text-center mt-2" style={{ ...body, color: COLORS.textFaint }}>{activeMeta.label}趨勢(最近 {chartData.length} 筆紀錄)</div>
           </>
         ) : (
