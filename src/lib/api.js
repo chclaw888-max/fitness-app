@@ -614,3 +614,47 @@ export async function getBodyMetricsByDate(date) {
   if (error) throw error;
   return data;
 }
+
+export async function getBodyMetricsByDateRange(startDate, endDate) {
+  const { data, error } = await supabase
+    .from("body_metrics")
+    .select("id, recorded_at, weight_kg, body_fat_pct, muscle_mass_kg, visceral_fat_level, photo_path, note")
+    .gte("recorded_at", startDate)
+    .lte("recorded_at", endDate)
+    .order("recorded_at", { ascending: true });
+  if (error) throw error;
+  return data;
+}
+
+export async function getExerciseVolumeTrend(exerciseId, weeks = 4) {
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - weeks * 7);
+  const startDateStr = startDate.toISOString().split('T')[0];
+
+  const { data, error } = await supabase
+    .from('workout_sets')
+    .select('workout_sets.id, workouts!inner(finished_at), workout_sets.weight, workout_sets.reps')
+    .eq('workout_sets.exercise_id', exerciseId)
+    .gte('workouts!inner.finished_at', startDateStr)
+    .order('workouts!inner.finished_at', { ascending: false });
+
+  if (error) throw error;
+
+  const weekMap = new Map();
+  for (const row of data) {
+    const date = new Date(row.workouts!.inner?.finished_at);
+    if (isNaN(date.getTime())) continue;
+    const weekStart = new Date(date);
+    weekStart.setDate(date.getDate() - date.getDay()); // Start of week (Sunday)
+    const weekKey = weekStart.toISOString().split('T')[0];
+    const volume = (row.workout_sets?.weight ?? 0) * (row.workout_sets?.reps ?? 0);
+    const current = weekMap.get(weekKey) ?? 0;
+    weekMap.set(weekKey, current + volume);
+  }
+
+  const result = Array.from(weekMap, ([week_start, volume]) => ({ week_start, volume }))
+    .sort((a, b) => new Date(a.week_start) - new Date(b.week_start))
+    .slice(-weeks);
+
+  return result;
+}

@@ -6,6 +6,9 @@ import {
   getBodyPhotoUrl, uploadBodyPhoto,
   listWorkoutsByDateRange, getWorkoutById, updateWorkout, deleteWorkout,
   getBodyMetricsByDate,
+  getBodyMetricsByDateRange,
+  getExerciseVolumeTrend,
+  listExercises,
   updateNutritionEntry
 } from "../lib/api";
 
@@ -100,6 +103,13 @@ function TrainingPanel({ volumeTrend, personalRecords, weekVolume, streak, weekW
   });
   const [formLoading, setFormLoading] = useState(false);
 
+  // New state for exercise trend
+  const [exercises, setExercises] = useState([]);
+  const [selectedExercise, setSelectedExercise] = useState(null);
+  const [exerciseTrend, setExerciseTrend] = useState([]);
+  const [exerciseTrendLoading, setExerciseTrendLoading] = useState(false);
+  const [exerciseTrendError, setExerciseTrendError] = useState(null);
+
   const loadWorkoutsByDate = async () => {
     if (!dateRange.start || !dateRange.end) return;
     setLoading(true);
@@ -112,6 +122,44 @@ function TrainingPanel({ volumeTrend, personalRecords, weekVolume, streak, weekW
       setLoading(false);
     }
   };
+
+  // Fetch exercises on mount
+  useEffect(() => {
+    const fetchExercises = async () => {
+      try {
+        const data = await listExercises();
+        setExercises(data);
+      } catch (e) {
+        console.error("Failed to load exercises:", e);
+      }
+    };
+    fetchExercises();
+  }, []);
+
+
+  // Fetch exercise trend when selected exercise changes
+  useEffect(() => {
+    const fetchExerciseTrend = async () => {
+      if (!selectedExercise) {
+        setExerciseTrend([]);
+        setExerciseTrendError(null);
+        return;
+      }
+      setExerciseTrendLoading(true);
+      setExerciseTrendError(null);
+      try {
+        const data = await getExerciseVolumeTrend(selectedExercise.id, 4); // last 4 weeks
+        setExerciseTrend(data);
+      } catch (e) {
+        console.error("Failed to load exercise trend:", e);
+        setExerciseTrendError(e.message || "載入失敗");
+        setExerciseTrend([]);
+      } finally {
+        setExerciseTrendLoading(false);
+      }
+    };
+    fetchExerciseTrend();
+  }, [selectedExercise]);
 
   const handleDateChange = (range) => {
     setDateRange(range);
@@ -251,6 +299,35 @@ function TrainingPanel({ volumeTrend, personalRecords, weekVolume, streak, weekW
         </div>
       </div>
 
+      {/* Exercise Selector */}
+      {!loading && exercises.length > 0 && (
+        <div className="mb-4">
+          <div className="flex items-center gap-3">
+            <div className="flex-1">
+              <label className="text-xs mb-1 block" style={{ ...body, color: COLORS.textDim }}>選擇動作</label>
+              <select
+                value={selectedExercise ? selectedExercise.id : ""}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  const exercise = exercises.find(ex => ex.id === id);
+                  setSelectedExercise(exercise || null);
+                }}
+                className="w-full rounded-xl px-3 py-2 text-sm"
+                style={inputStyle}
+              >
+                <option value="">請選擇動作</option>
+                {exercises.map(ex => (
+                  <option key={ex.id} value={ex.id}>
+                    {ex.name} ({ex.category})
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
+      ))
+
+
       {/* Stats Cards */}
       {!loading && (
         <div className="flex gap-3 mb-5">
@@ -283,6 +360,43 @@ function TrainingPanel({ volumeTrend, personalRecords, weekVolume, streak, weekW
           </div>
         </div>
       )}
+
+      {/* Exercise Trend Chart */}
+      {!loading && selectedExercise && (
+        <div className="mb-4">
+          {exerciseTrendLoading && (
+            <div className="text-sm text-center py-6" style={{ ...body, color: COLORS.textFaint }}>載入中...</div>
+          )}
+          {!exerciseTrendLoading && exerciseTrendError && (
+            <div className="text-sm text-center py-6" style={{ ...body, color: COLORS.danger }}>
+              載入失敗: {exerciseTrendError}
+            </div>
+          )}
+          {!exerciseTrendLoading && !exerciseTrendError && exerciseTrend.length > 0 && (
+            <>
+              <div className="rounded-2xl p-4 mb-4" style={{ background: COLORS.surface, border: `1px solid ${COLORS.borderSoft}` }}>
+                <div className="text-xs mb-2" style={{ ...body, color: COLORS.textDim }}>
+                  {selectedExercise.name} 訓練量趨勢 (近 4 週)
+                </div>
+                <LineChart points={exerciseTrend.map((d) => ({ value: Number(d.volume) }))} />
+                <div className="flex justify-between mt-1">
+                  {exerciseTrend.map((d, i) => (
+                    <span key={i} className="text-xs" style={{ ...body, color: COLORS.textFaint }}>
+                      {new Date(d.week_start).getMonth() + 1}/{new Date(d.week_start).getDate()}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+          {!exerciseTrendLoading && !exerciseTrendError && exerciseTrend.length === 0 && (
+            <div className="text-sm text-center py-6" style={{ ...body, color: COLORS.textFaint }}>
+              該動作在此期間內沒有訓練紀錄
+            </div>
+          )}
+        </div>
+      )}
+
 
       {/* Personal Records */}
       {!loading && (
@@ -714,11 +828,26 @@ function BodyMetricsPanel({ bodyMetrics, onSave, onDelete, saving }) {
   const [filteredMetrics, setFilteredMetrics] = useState([]);
   const [editingMetric, setEditingMetric] = useState(null);
 
+  // New state for date range
+  const [dateRange, setDateRange] = useState({ start: "", end: "" });
+  const [rangeMetrics, setRangeMetrics] = useState([]);
+  const [rangeLoading, setRangeLoading] = useState(false);
+  const [rangeError, setRangeError] = useState(null);
+
   useEffect(() => {
     if (selectedDate) {
       loadMetricsForDate();
     }
   }, [selectedDate]);
+
+  useEffect(() => {
+    if (dateRange.start && dateRange.end) {
+      loadMetricsForRange();
+    } else {
+      setRangeMetrics([]);
+      setRangeError(null);
+    }
+  }, [dateRange.start, dateRange.end]);
 
   const loadMetricsForDate = async () => {
     try {
@@ -730,8 +859,28 @@ function BodyMetricsPanel({ bodyMetrics, onSave, onDelete, saving }) {
     }
   };
 
+  const loadMetricsForRange = async () => {
+    setRangeLoading(true);
+    setRangeError(null);
+    try {
+      const metrics = await getBodyMetricsByDateRange(dateRange.start, dateRange.end);
+      setRangeMetrics(metrics);
+    } catch (e) {
+      console.error("Failed to load body metrics for range:", e);
+      setRangeError(e.message || "載入失敗");
+      setRangeMetrics([]);
+    } finally {
+      setRangeLoading(false);
+    }
+  };
+
   const withPhotos = filteredMetrics.filter((m) => m.photo_path);
   const latest = filteredMetrics[0];
+
+  // Latest metric in range (most recent)
+  const latestInRange = rangeMetrics.length > 0 ? rangeMetrics.reduce((latest, current) =>
+    new Date(current.recorded_at) > new Date(latest.recorded_at) ? current : latest
+  ) : null;
 
   const METRICS = {
     weight_kg: { label: "體重", unit: "kg", color: COLORS.lime },
@@ -739,7 +888,12 @@ function BodyMetricsPanel({ bodyMetrics, onSave, onDelete, saving }) {
     muscle_mass_kg: { label: "肌肉量", unit: "kg", color: "#FF9F5C" },
     visceral_fat_level: { label: "內臟脂肪", unit: "", color: "#FF5D5D" },
   };
-  const chartData = [...filteredMetrics].filter((m) => m[chartMetric] != null).reverse();
+
+  // Chart data for range (ascending date)
+  const chartData = rangeMetrics
+    .filter((m) => m[chartMetric] != null)
+    .sort((a, b) => new Date(a.recorded_at) - new Date(b.recorded_at));
+
   const activeMeta = METRICS[chartMetric];
 
   const handleSaveMetric = async (data) => {
@@ -767,17 +921,75 @@ function BodyMetricsPanel({ bodyMetrics, onSave, onDelete, saving }) {
 
   return (
     <div>
+      {/* Date Range Picker for Trend */}
+      {!rangeLoading && (
+        <div className="mb-4">
+          <div className="flex items-center gap-3">
+            <div className="flex-1">
+              <label className="text-xs mb-1 block" style={{ ...body, color: COLORS.textDim }}>開始日期</label>
+              <input
+                type="date"
+                value={dateRange.start}
+                onChange={(e) => {
+                  const start = e.target.value;
+                  setDateRange(prev => ({ ...prev, start }));
+                }}
+                className="w-full rounded-xl px-3 py-2 text-sm"
+                style={inputStyle}
+              />
+            </div>
+            <div className="flex-1">
+              <label className="text-xs mb-1 block" style={{ ...body, color: COLORS.textDim }}>結束日期</label>
+              <input
+                type="date"
+                value={dateRange.end}
+                onChange={(e) => {
+                  const end = e.target.value;
+                  setDateRange(prev => ({ ...prev, end }));
+                }}
+                className="w-full rounded-xl px-3 py-2 text-sm"
+                style={inputStyle}
+              />
+            </div>
+            <button
+              onClick={() => {
+                // Quick preset: last 30 days
+                const end = new Date().toISOString().split('T')[0];
+                const start = new Date();
+                start.setDate(start.getDate() - 30);
+                const startStr = start.toISOString().split('T')[0];
+                setDateRange({ start: startStr, end: end });
+              }}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm"
+              style={{ background: COLORS.accentSoft, color: COLORS.accent, ...body, fontWeight: 600 }}
+            >
+              最近30天
+            </button>
+          </div>
+        </div>
+      )}
+      {rangeLoading && (
+        <div className="mb-4 text-sm text-center" style={{ ...body, color: COLORS.textFaint }}>
+          載入趨勢資料中...
+        </div>
+      )}
+      {rangeError && (
+        <div className="mb-4 text-sm text-center" style={{ ...body, color: COLORS.danger }}>
+          載入失敗: {rangeError}
+        </div>
+      )}
+
       <div className="rounded-2xl p-4 mb-4" style={{ background: COLORS.surface, border: `1px solid ${COLORS.borderSoft}` }}>
         <div className="grid grid-cols-2 gap-3 mb-4">
           {Object.entries(METRICS).map(([key, meta]) => {
-            const value = latest?.[key];
+            const value = latestInRange?.[key] ?? latest?.[key];
             const active = chartMetric === key;
             return (
               <button
                 key={key}
                 onClick={() => setChartMetric(key)}
                 className="text-left rounded-xl p-2.5"
-                style={{ background: active ? COLORS.accentSoft : "transparent", border: `1px solid ${active ? COLORS.accent : "transparent"}` }}
+                style={{ background: active ? COLORS.accentSoft : "transparent", border: `1px solid ${active ? COLORS.accent : "transparent`}} }}
               >
                 <div className="text-xs" style={{ ...body, color: COLORS.textDim }}>{meta.label}</div>
                 <div className="text-xl" style={{ ...display, color: COLORS.text, fontWeight: 700 }}>
@@ -790,7 +1002,7 @@ function BodyMetricsPanel({ bodyMetrics, onSave, onDelete, saving }) {
         {chartData.length > 1 ? (
           <>
             <LineChart points={chartData.map((m) => ({ value: Number(m[chartMetric]) }))} color={activeMeta.color} />
-            <div className="text-xs text-center mt-2" style={{ ...body, color: COLORS.textFaint }}>{activeMeta.label}趨勢(近 {chartData.length} 筆紀錄)</div>
+            <div className="text-xs text-center mt-2" style={{ ...body, color: COLORS.textFaint }}>{activeMeta.label}趨勢(最近 {chartData.length} 筆紀錄)</div>
           </>
         ) : (
           <div className="text-sm text-center py-4" style={{ ...body, color: COLORS.textFaint }}>累積更多「{activeMeta.label}」紀錄後這裡會顯示趨勢圖</div>
