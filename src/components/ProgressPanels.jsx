@@ -82,18 +82,14 @@ function SegmentedControl({ value, onChange, options }) {
 
 /* ----------------------------- 訓練趨勢 / PR ----------------------------- */
 
-function TrainingPanel({}) {
+function TrainingPanel({ volumeTrend, personalRecords, weekVolume }) {
   const [dateRange, setDateRange] = useState({ start: "", end: "" });
   const [workouts, setWorkouts] = useState([]);
-  [volumeTrend, setVolumeTrend] = useState([]);
-  [personalRecords, setPersonalRecords] = useState([]);
-  [weekVolume, setWeekVolume] = useState(0);
-  [weekWorkouts, setWeekWorkouts] = useState(0);
-  [streak, setStreak] = useState(0);
-  [loading, setLoading] = useState(false);
-  [selectedWorkout, setSelectedWorkout] = useState(null);
-  [workoutForm, setWorkoutForm] = useState(false);
-  [formData, setFormData] = useState({
+  const [sharing, setSharing] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [selectedWorkout, setSelectedWorkout] = useState(null);
+  const [workoutForm, setWorkoutForm] = useState(false);
+  const [formData, setFormData] = useState({
     routineName: "",
     durationSeconds: 0,
     totalVolume: 0,
@@ -102,32 +98,7 @@ function TrainingPanel({}) {
     avgHeartRate: null,
     maxHeartRate: null
   });
-  [formLoading, setFormLoading] = useState(false);
-
-  useEffect(() => {
-    loadInitialData();
-  }, []);
-
-  const loadInitialData = async () => {
-    setLoading(true);
-    try {
-      const [trend, records, weekStats, streakValue] = await Promise.all([
-        getVolumeTrend(7),
-        getPersonalRecords(10),
-        getThisWeekStats(),
-        getStreak()
-      ]);
-      setVolumeTrend(trend);
-      setPersonalRecords(records);
-      setWeekVolume(weekStats.weekVolume);
-      setWeekWorkouts(weekStats.weekWorkouts);
-      setStreak(streakValue);
-    } catch (e) {
-      console.error("Failed to load initial data:", e);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [formLoading, setFormLoading] = useState(false);
 
   const loadWorkoutsByDate = async () => {
     if (!dateRange.start || !dateRange.end) return;
@@ -1066,7 +1037,11 @@ export default function ProgressPanels({
       />
 
       {tab === "training" && (
-        <TrainingPanel />
+        <TrainingPanel
+          volumeTrend={volumeTrend}
+          personalRecords={personalRecords}
+          weekVolume={weekVolume}
+        />
       )}
       {tab === "body" && (
         <BodyMetricsPanel bodyMetrics={bodyMetrics} onSave={onSaveBodyMetric} onDelete={onDeleteBodyMetric} saving={bodyMetricSaving} />
@@ -1078,6 +1053,7 @@ export default function ProgressPanels({
           logs={nutritionLogs}
           onAdd={onAddNutrition}
           onDelete={onDeleteNutrition}
+          onUpdate={updateNutritionEntry}
           saving={nutritionSaving}
         />
       )}
