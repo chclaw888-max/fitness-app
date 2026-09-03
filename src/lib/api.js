@@ -635,8 +635,7 @@ export async function getExerciseVolumeTrend(exerciseId, weeks = 4) {
     .from('workout_sets')
     .select('workout_sets.id, workouts!inner(finished_at), workout_sets.weight, workout_sets.reps')
     .eq('workout_sets.exercise_id', exerciseId)
-    .gte('workouts!inner.finished_at', startDateStr)
-    .order('workouts!inner.finished_at', { ascending: false });
+    .gte('workouts!inner.finished_at', startDateStr);
 
   if (error) throw error;
 
