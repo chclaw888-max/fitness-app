@@ -632,27 +632,27 @@ export async function getExerciseVolumeTrend(exerciseId, weeks = 4) {
   const startDateStr = startDate.toISOString().split('T')[0];
 
   const { data, error } = await supabase
-    .from('workout_sets')
-    .select('workout_sets.id, workouts!inner(finished_at), workout_sets.weight, workout_sets.reps')
+    .from('workouts')
+    .select('id, finished_at, workout_sets!inner(weight, reps)')
     .eq('workout_sets.exercise_id', exerciseId)
-    .gte('workouts!inner.finished_at', startDateStr);
+    .gte('finished_at', startDateStr);
 
   if (error) throw error;
 
   const weekMap = new Map();
-  for (const row of data) {
-    const workout = row.workouts?.inner;
-    if (!workout || !workout.finished_at) continue;
-
+  for (const workout of data) {
     const date = new Date(workout.finished_at);
     if (isNaN(date.getTime())) continue;
 
     const weekStart = new Date(date);
     weekStart.setDate(date.getDate() - date.getDay()); // Start of week (Sunday)
     const weekKey = weekStart.toISOString().split('T')[0];
-    const volume = (row.workout_sets?.weight ?? 0) * (row.workout_sets?.reps ?? 0);
-    const current = weekMap.get(weekKey) ?? 0;
-    weekMap.set(weekKey, current + volume);
+
+    for (const set of workout.workout_sets) {
+      const volume = (set.weight ?? 0) * (set.reps ?? 0);
+      const current = weekMap.get(weekKey) ?? 0;
+      weekMap.set(weekKey, current + volume);
+    }
   }
 
   const result = Array.from(weekMap, ([week_start, volume]) => ({ week_start, volume }))
