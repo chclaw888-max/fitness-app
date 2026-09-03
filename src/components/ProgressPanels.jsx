@@ -414,7 +414,7 @@ function TrainingPanel({ volumeTrend, personalRecords, weekVolume, streak, weekW
             <div>
               <label className="text-xs mb-1 block" style={{ ...body, color: COLORS.textDim }}>總訓練量 (kg)</label>
               <input
-                type("number"
+                type="number"
                 value={formData.totalVolume}
                 onChange={(e) => setFormData(prev => ({ ...prev, totalVolume: Number(e.target.value) || 0 }))}
                 placeholder="5000"

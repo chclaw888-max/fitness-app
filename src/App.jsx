@@ -18,7 +18,7 @@ import {
   listRecentWorkouts, getThisWeekStats, getStreak,
   getVolumeTrend, getPersonalRecords, getPersonalRecordsMap, getAllTimeStats,
   listBodyMetrics, upsertBodyMetric, uploadBodyPhoto, getBodyPhotoUrl, deleteBodyMetric,
-  listNutritionLogs, addNutritionEntry, deleteNutritionEntry,
+  listNutritionLogs, addNutritionEntry, updateNutritionEntry, deleteNutritionEntry,
 } from "./lib/api";
 
 /* ----------------------------- 共用小元件 ----------------------------- */
