@@ -969,6 +969,8 @@ export default function App() {
                   volumeTrend={volumeTrend}
                   personalRecords={personalRecords}
                   weekVolume={weekVolume}
+                  streak={streak}
+                  weekWorkouts={weekWorkouts}
                   bodyMetrics={bodyMetrics}
                   onSaveBodyMetric={handleSaveBodyMetric}
                   onDeleteBodyMetric={handleDeleteBodyMetric}

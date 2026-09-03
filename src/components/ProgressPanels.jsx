@@ -82,7 +82,7 @@ function SegmentedControl({ value, onChange, options }) {
 
 /* ----------------------------- 訓練趨勢 / PR ----------------------------- */
 
-function TrainingPanel({ volumeTrend, personalRecords, weekVolume }) {
+function TrainingPanel({ volumeTrend, personalRecords, weekVolume, streak, weekWorkouts }) {
   const [dateRange, setDateRange] = useState({ start: "", end: "" });
   const [workouts, setWorkouts] = useState([]);
   const [sharing, setSharing] = useState(false);
@@ -887,6 +887,7 @@ function NutritionPanel({ date, onChangeDate, logs, onAdd, onDelete, onUpdate, s
   const [protein, setProtein] = useState("");
   const [carbs, setCarbs] = useState("");
   const [fat, setFat] = useState("");
+  const [note, setNote] = useState("");
 
   const totals = logs.reduce(
     (acc, l) => ({
@@ -901,17 +902,31 @@ function NutritionPanel({ date, onChangeDate, logs, onAdd, onDelete, onUpdate, s
   const handleSubmit = async () => {
     if (!meal.trim()) return;
     if (editMode && editingId) {
-      const ok = await onUpdate(editingId, { meal: meal.trim(), calories, protein, carbs, fat });
+      const ok = await onUpdate(editingId, {
+        meal: meal.trim(),
+        calories: calories ? Number(calories) : 0,
+        proteinG: protein ? Number(protein) : 0,
+        carbsG: carbs ? Number(carbs) : 0,
+        fatG: fat ? Number(fat) : 0,
+        note: note || null,
+      });
       if (ok) {
-        setMeal(""); setCalories(""); setProtein(""); setCarbs(""); setFat("");
+        setMeal(""); setCalories(""); setProtein(""); setCarbs(""); setFat(""); setNote("");
         setShowForm(false);
         setEditMode(false);
         setEditingId(null);
       }
     } else {
-      const ok = await onAdd({ meal: meal.trim(), calories, protein, carbs, fat });
+      const ok = await onAdd({
+        meal: meal.trim(),
+        calories: calories ? Number(calories) : 0,
+        proteinG: protein ? Number(protein) : 0,
+        carbsG: carbs ? Number(carbs) : 0,
+        fatG: fat ? Number(fat) : 0,
+        note: note || null,
+      });
       if (ok) {
-        setMeal(""); setCalories(""); setProtein(""); setCarbs(""); setFat("");
+        setMeal(""); setCalories(""); setProtein(""); setCarbs(""); setFat(""); setNote("");
         setShowForm(false);
       }
     }
@@ -925,6 +940,7 @@ function NutritionPanel({ date, onChangeDate, logs, onAdd, onDelete, onUpdate, s
     setProtein(log.protein_g.toString());
     setCarbs(log.carbs_g.toString());
     setFat(log.fat_g.toString());
+    setNote(log.note || "");
     setShowForm(true);
   };
 
@@ -970,6 +986,7 @@ function NutritionPanel({ date, onChangeDate, logs, onAdd, onDelete, onUpdate, s
             <input type="number" value={protein} onChange={(e) => setProtein(e.target.value)} placeholder="蛋白質" className="rounded-xl px-2 py-2 text-sm text-center" style={inputStyle} />
             <input type="number" value={carbs} onChange={(e) => setCarbs(e.target.value)} placeholder="碳水" className="rounded-xl px-2 py-2 text-sm text-center" style={inputStyle} />
             <input type="number" value={fat} onChange={(e) => setFat(e.target.value)} placeholder="脂肪" className="rounded-xl px-2 py-2 text-sm text-center" style={inputStyle} />
+            <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="備註(選填)" className="w-full rounded-xl px-2 py-2 text-sm mb-2" style={inputStyle} />
           </div>
           <button
             onClick={handleSubmit}
@@ -1015,6 +1032,7 @@ function NutritionPanel({ date, onChangeDate, logs, onAdd, onDelete, onUpdate, s
 
 export default function ProgressPanels({
   volumeTrend, personalRecords, weekVolume,
+  streak, weekWorkouts,
   bodyMetrics, onSaveBodyMetric, onDeleteBodyMetric, bodyMetricSaving,
   nutritionDate, onChangeNutritionDate, nutritionLogs, onAddNutrition, onDeleteNutrition, nutritionSaving,
 }) {
@@ -1041,6 +1059,8 @@ export default function ProgressPanels({
           volumeTrend={volumeTrend}
           personalRecords={personalRecords}
           weekVolume={weekVolume}
+          streak={streak}
+          weekWorkouts={weekWorkouts}
         />
       )}
       {tab === "body" && (
